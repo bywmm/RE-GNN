@@ -4,12 +4,27 @@ This is the anonymous repository for paper submission 540 (Relation Embedding ba
 
 ## Using RE-GNN respository to reproduce the results.
 
-The scripts are provided.
+### Step 1: Install requirements.
+
+```txt
+torch==1.7.0
+networkx==2.4
+tqdm==4.46.0
+numpy==1.16.2
+scipy==1.4.1
+dgl==0.7.1
+scikit_learn==1.0.2
+```
+
+
+### Step 2: Run scripts
+
+The scripts of our main results are provided.
 Run one of them to get the reported results.
 For example, 
 
 ```bash
-bash script_imdb_regcn.sh
+bash script_imdb_regcn.sh $GPU_ID$
 ```
 
 
