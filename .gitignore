@@ -8,7 +8,10 @@ __pycache__/
 
 output/
 
-data/
+data/raw/
+data/wordvec/
+data/preprocessed/DBLP_processed/
+data/preprocessed/ACM_processed/
 
 checkpoint/
 

@@ -5,13 +5,17 @@ This is the anonymous repository for paper submission 540 (Relation Embedding ba
 ## Using RE-GNN respository to reproduce the results.
 
 The scripts are provided.
-Run one of them, like
+Run one of them to get the reported results.
+For example, 
 
 ```bash
-bash script_dblp_regcn.sh
+bash script_imdb_regcn.sh
 ```
 
-to get the reported results.
+
+Note that since the sizes of ACM and DBLP datasets are large, we do not add them to this repository.
+It can be founded on previous work, which is mentioned in the paper submission.
+
 <!-- 
 |       |DBLP   |       |ACM    |       |IMDB   |       |
 |---    |---    |---    |---    |---    |---    |---    |
