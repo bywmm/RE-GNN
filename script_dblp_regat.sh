@@ -1,0 +1,1 @@
+python run_regnn.py --dataset DBLP --model regat --save-postfix DBLP-regat --weight_decay 0.001 --repeat 5 --device $1

@@ -1,0 +1,20 @@
+# Created by .ignore support plugin (hsz.mobi)
+# pychram
+.idea/
+
+logs/
+
+__pycache__/
+
+output/
+
+data/
+
+checkpoint/
+
+.ipynb_checkpoints/
+
+cookies.txt 
+
+
+plots/

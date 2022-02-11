@@ -1,0 +1,1 @@
+python run_regnn.py --dataset IMDB --model regcn --save-postfix IMDB-regcn --weight_decay 0.005 --repeat 5 --device $1
