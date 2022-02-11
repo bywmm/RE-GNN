@@ -58,7 +58,6 @@ class REGraphConv(nn.Module):
         edge_weight = self.edge_weight * self.alpha
         # edge_weight[6:] = 1.0
         edge_weight = nn.LeakyReLU()(edge_weight)
-        print(edge_weight)
         ew = edge_weight[e_feat-1]
         # ew = self.ew_dropout(ew)
         graph.edata.update({'ew': ew})

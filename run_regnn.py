@@ -41,54 +41,6 @@ def run(args):
     device = torch.device(f'cuda:{args.device}' if torch.cuda.is_available() else 'cpu')
     features_list = [torch.FloatTensor(features).to(device) for features in features_list]
 
-    with open('node.dat', 'w') as f:
-        cnt = 0
-        type_cnt = 0
-        for features in features_list:
-            h = features.shape[0]
-            w = features.shape[1]
-            for i in range(h):
-                out_str = str(int(features[i][0].item()))
-                for j in range(1, w):
-                    out_str += ','
-                    out_str += str(int(features[i][j].item()))
-                print(cnt, type_cnt)
-                f.writelines(str(cnt) + '\t' + 'e\t' + str(type_cnt) + '\t'+ out_str + '\n')
-                cnt += 1
-            type_cnt += 1
-    # with open('link.dat', 'w') as f:
-    #     nnz = adjMM.nonzero()
-    #     for i, j in zip(nnz[0], nnz[1]):
-    #         f.writelines(str(i) + '\t' + str(j) + '\t' + str(adjMM[i,j]-1) + '\t'+'1.0' + '\n')
-    #         print(i, j, adjMM[i,j])
-    # labels = torch.LongTensor(labels)
-    # train_idx = train_val_test_idx['train_idx']
-    # val_idx = train_val_test_idx['val_idx']
-    # test_idx = train_val_test_idx['test_idx']
-    # print(len(train_idx), len(val_idx), len(test_idx))
-    assert False
-    with open('label.dat.train', 'w') as f:
-        for i in range(train_idx.shape[0]):
-            f.writelines(str(train_idx[i]) + '\t' + 'e\t0\t'+ str(labels[train_idx[i]].item()) + '\n')
-            print(train_idx[i], labels[train_idx[i]].item())
-    with open('label.dat.val', 'w') as f:
-        for i in range(val_idx.shape[0]):
-            f.writelines(str(val_idx[i]) + '\t' + 'e\t0\t'+ str(labels[val_idx[i]].item()) + '\n')
-            print(val_idx[i], labels[val_idx[i]].item())
-    with open('label.dat', 'w') as f:
-        for i in range(train_idx.shape[0]):
-            f.writelines(str(train_idx[i]) + '\t' + 'e\t0\t'+ str(labels[train_idx[i]].item()) + '\n')
-            print(train_idx[i], labels[train_idx[i]].item())
-        for i in range(val_idx.shape[0]):
-            f.writelines(str(val_idx[i]) + '\t' + 'e\t0\t'+ str(labels[val_idx[i]].item()) + '\n')
-            print(val_idx[i], labels[val_idx[i]].item())
-    with open('label.dat.test', 'w') as f:
-        for i in range(test_idx.shape[0]):
-            f.writelines(str(test_idx[i]) + '\t' + 'e\t0\t'+ str(labels[test_idx[i]].item()) + '\n')
-            print(test_idx[i], labels[test_idx[i]].item())  
-
-
-    assert False
     # 0 - loaded features
     if args.feats_type == 0:
         in_dims = [features.shape[1] for features in features_list]

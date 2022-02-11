@@ -3,7 +3,7 @@ import torch.nn as nn
 import dgl
 
 import dgl.function as fn
-from layer import REGraphConv, APLayer
+from layer import REGraphConv
 
 
 class REGCN(nn.Module):
@@ -26,7 +26,6 @@ class REGCN(nn.Module):
 
         self.layers = nn.ModuleList()
         # input layer
-        # self.layers.append(myGraphConv(num_etypes, in_feats, n_hidden, activation=activation, dropout=dropout, weight=True))
         self.layers.append(REGraphConv(num_etypes, in_feats, n_hidden, bias=False, activation=None, dropout=dropout, weight=False))
         # hidden layers
         for i in range(n_layers - 1):

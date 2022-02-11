@@ -2,8 +2,7 @@ import torch
 import torch.nn as nn
 
 from dgl.nn.pytorch import edge_softmax
-from layer import REGATConv, APLayer
-
+from layer import REGATConv
 
 class REGAT(nn.Module):
     def __init__(self,
