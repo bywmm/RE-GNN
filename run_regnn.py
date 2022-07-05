@@ -107,7 +107,9 @@ def run(args):
     ari_mean_list = []
     ari_std_list = []
     heads = ([args.num_heads] * args.num_layers) + [1]
+    time_used = []
     for _ in range(args.repeat):
+        st = time.perf_counter()
         num_classes = labels.max().item()+1
         if args.model == 'regat':
             net = REGAT(g, num_etype+num_ntype, args.num_layers, args.hidden_dim, args.hidden_dim,
@@ -169,6 +171,7 @@ def run(args):
         nmi_std_list.append(nmi_std)
         ari_mean_list.append(ari_mean)
         ari_std_list.append(ari_std)
+        time_used.append(time.perf_counter()-st)
 
     # print out a summary of the evaluations
     svm_macro_f1_lists = np.transpose(np.array(svm_macro_f1_lists), (1, 0, 2))
@@ -182,6 +185,8 @@ def run(args):
     print('Micro-F1: ' + ', '.join(['{:.6f}~{:.6f} ({:.1f})'.format(
         micro_f1[:, 0].mean(), micro_f1[:, 1].mean(), train_size) for micro_f1, train_size in
         zip(svm_micro_f1_lists, [0.8, 0.6, 0.4, 0.2])]))
+    time_used = torch.tensor(time_used)
+    print("Used Time:", time_used.mean(), time_used.std())
 
 
 if __name__ == '__main__':
