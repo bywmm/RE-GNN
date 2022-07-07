@@ -1,8 +1,5 @@
 import torch
 import torch.nn as nn
-import dgl
-
-import dgl.function as fn
 from layer import REGraphConv
 
 
