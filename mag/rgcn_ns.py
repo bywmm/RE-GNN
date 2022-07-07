@@ -1,13 +1,14 @@
 from copy import copy
 import argparse
 from tqdm import tqdm
+import time
 
 import torch
 import torch.nn.functional as F
 from torch.nn import ModuleList, Linear, ParameterDict, Parameter
 from torch_sparse import SparseTensor
 from torch_geometric.utils import to_undirected
-from torch_geometric.data import NeighborSampler
+from torch_geometric.loader import NeighborSampler
 from torch_geometric.utils.hetero import group_hetero_graph
 from torch_geometric.nn import MessagePassing
 
@@ -23,6 +24,8 @@ parser.add_argument('--dropout', type=float, default=0.5)
 parser.add_argument('--lr', type=float, default=0.01)
 parser.add_argument('--epochs', type=int, default=3)
 parser.add_argument('--runs', type=int, default=10)
+parser.add_argument('--train_batch_size', type=int, default=1024)
+parser.add_argument('--test_batch_size', type=int, default=2048)
 args = parser.parse_args()
 print(args)
 
@@ -83,9 +86,11 @@ paper_idx = local2global['paper']
 paper_train_idx = paper_idx[split_idx['train']['paper']]
 
 train_loader = NeighborSampler(edge_index, node_idx=paper_train_idx,
-                               sizes=[25, 20], batch_size=512, shuffle=True,
+                               sizes=[25, 20], batch_size=args.train_batch_size, shuffle=True,
                                num_workers=12)
-
+test_loader = NeighborSampler(edge_index, node_idx=paper_idx,
+                               sizes=[25, 20], batch_size=args.test_batch_size, shuffle=False,
+                               num_workers=12)
 
 class RGCNConv(MessagePassing):
     def __init__(self, in_channels, out_channels, num_node_types,
@@ -210,7 +215,31 @@ class RGCN(torch.nn.Module):
 
         return x.log_softmax(dim=-1)
 
-    def inference(self, x_dict, edge_index_dict, key2int):
+    def inference(self, x_dict, test_loader, edge_type, node_type, local_node_idx):
+        for i in range(self.num_layers):
+            xs = []
+            # node_consumption = 0
+            for batch_size, n_id, adj in test_loader:
+                if i == 0:
+                    x = self.group_input(x_dict, node_type, local_node_idx, n_id)
+                else:
+                    # x = x_all[node_consumption:node_consumption+batch_size].to(node_type.device)
+                    # node_consumption += batch_size
+                    x = x_all[n_id].to(node_type.device)
+                node_type_src = node_type[n_id]
+                edge_index, e_id, size = adj[i].to(node_type.device)
+                node_type_target = node_type_src[:size[1]]
+                x_target = x[:size[1]]
+                x = self.convs[i]((x, x_target), edge_index, edge_type[e_id], node_type_target)
+                if i != self.num_layers - 1:
+                    x = F.relu(x)
+                xs.append(x.cpu())
+
+            x_all = torch.cat(xs, dim=0)
+
+        return x_all
+
+    def inference_full_batch(self, x_dict, edge_index_dict, key2int):
         # We can perform full-batch inference on GPU.
 
         device = list(x_dict.values())[0].device
@@ -262,7 +291,7 @@ local_node_idx = local_node_idx.to(device)
 y_global = y_global.to(device)
 
 
-def train(epoch):
+def train(epoch, optimizer):
     model.train()
 
     pbar = tqdm(total=paper_train_idx.size(0))
@@ -293,11 +322,37 @@ def train(epoch):
 def test():
     model.eval()
 
-    out = model.inference(x_dict, edge_index_dict, key2int)
-    out = out[key2int['paper']]
+    full_batch_flag = False
+    if full_batch_flag:
+        out = model.inference_full_batch(x_dict, edge_index_dict, key2int)
+        out = out[key2int['paper']]
+        y_pred = out.argmax(dim=-1, keepdim=True).cpu() # [736389, 1]
+        y_true = data.y_dict['paper'] # [736389, 1]
+    else:
+        pbar = tqdm(total=paper_train_idx.size(0))
+        pbar.set_description(f'Test')
 
-    y_pred = out.argmax(dim=-1, keepdim=True).cpu()
-    y_true = data.y_dict['paper']
+        y_pred = []
+        y_true = []
+        for batch_size, n_id, adjs in test_loader:
+            n_id = n_id.to(device)
+            adjs = [adj.to(device) for adj in adjs]
+            out = model(n_id, x_dict, adjs, edge_type, node_type, local_node_idx)
+            y_t = y_global[n_id][:batch_size]
+            y_p = out.argmax(dim=-1, keepdim=True).cpu()
+            # print(y_t.shape)
+            # print(y_p.shape)
+            # print("=====")
+            y_pred.append(y_p)
+            y_true.append(y_t)
+            pbar.update(batch_size)
+
+        pbar.close()
+    
+        y_pred = torch.cat(y_pred, dim=0)
+        y_true = torch.cat(y_true, dim=0)
+
+    # out = model.inference(x_dict, test_loader, edge_type, node_type, local_node_idx)
 
     train_acc = evaluator.eval({
         'y_true': y_true[split_idx['train']['paper']],
@@ -314,13 +369,14 @@ def test():
 
     return train_acc, valid_acc, test_acc
 
-
+time_used = []
 test()  # Test if inference on GPU succeeds.
 for run in range(args.runs):
+    st = time.perf_counter()
     model.reset_parameters()
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
     for epoch in range(1, 1 + args.epochs):
-        loss = train(epoch)
+        loss = train(epoch, optimizer)
         result = test()
         logger.add_result(run, result)
         train_acc, valid_acc, test_acc = result
@@ -330,5 +386,8 @@ for run in range(args.runs):
               f'Train: {100 * train_acc:.2f}%, '
               f'Valid: {100 * valid_acc:.2f}%, '
               f'Test: {100 * test_acc:.2f}%')
+    time_used.append(time.perf_counter()-st)
     logger.print_statistics(run)
 logger.print_statistics()
+time_used = torch.tensor(time_used)
+print("time used:", time_used.mean(), time_used.std())
