@@ -19,6 +19,15 @@ python graph_saint.py
 ```
 
 ## my results
-|       | GCN           | GraphSAGE     | RGCN          | RGCN-Saint    | RGCN-SAGE     |
-| ---   | ---           | ---           | ---           | ---           | ---           |
-|   mag | 30.43 ± 0.18  | 31.29 ± 0.19  | OOM           | 47.73 ± 0.36  | Unavailable   |
+
+|           | Accuracy      | Time          | Epoch         | Comments          |
+| ---       | ---           | ---           | ---           | ---               |
+| MLP       | 26.89 ± 0.19  | 87.2863s      | 500           |                   |
+| GCN       | 30.43 ± 0.18  | 44.99s        | 100           |                   |
+| GraphSAGE | 31.29 ± 0.19  | 39.60s        | 100           |                   |
+| GCN-SAGE  | 36.56 ± 0.31  | 155.9268s     | 3             |                   |
+| GCN-SAGE  | 36.62 ± 0.41  | 1034.2740s    | 20            |                   |
+| RGCN      | OOM           |               |               |                   |
+| RGCN-Saint| 47.73 ± 0.36  | 337.103s      | 30            | SAINT-train only  |
+| RGCN_SAGE | 45.11 ± 0.44  | 214.7822s     | 3             | SAGE_train & test |
+| REGNN_dev |

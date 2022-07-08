@@ -1,4 +1,5 @@
 import argparse
+import time
 
 import torch
 import torch.nn.functional as F
@@ -156,8 +157,9 @@ def main():
 
     evaluator = Evaluator(name='ogbn-mag')
     logger = Logger(args.runs, args)
-
+    time_used = []
     for run in range(args.runs):
+        st = time.perf_counter()
         model.reset_parameters()
         optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
         for epoch in range(1, 1 + args.epochs):
@@ -173,9 +175,11 @@ def main():
                       f'Train: {100 * train_acc:.2f}%, '
                       f'Valid: {100 * valid_acc:.2f}% '
                       f'Test: {100 * test_acc:.2f}%')
-
+        time_used.append(time.perf_counter()-st)
         logger.print_statistics(run)
     logger.print_statistics()
+    time_used = torch.tensor(time_used)
+    print("time used:", time_used.mean(), time_used.std())
 
 
 if __name__ == "__main__":
