@@ -152,7 +152,9 @@ def main():
         deg_inv_sqrt[deg_inv_sqrt == float('inf')] = 0
         adj_t = deg_inv_sqrt.view(-1, 1) * adj_t * deg_inv_sqrt.view(1, -1)
         data.adj_t = adj_t
-
+    # sum_p = sum(p.numel() for p in model.parameters())
+    # print(sum_p)
+    # assert False
     data = data.to(device)
 
     evaluator = Evaluator(name='ogbn-mag')

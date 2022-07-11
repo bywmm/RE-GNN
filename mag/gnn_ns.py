@@ -175,7 +175,8 @@ device = f'cuda:{args.device}' if torch.cuda.is_available() else 'cpu'
 model = GCN(128, args.hidden_channels, dataset.num_classes, args.num_layers,
              args.dropout, num_nodes_dict, list(x_dict.keys()),
              len(edge_index_dict.keys())).to(device)
-
+# sum_p = sum(p.numel() for p in model.parameters())
+# print(sum_p)
 # Create global label vector.
 y_global = node_type.new_full((node_type.size(0), 1), -1)
 y_global[local2global['paper']] = data.y_dict['paper']
