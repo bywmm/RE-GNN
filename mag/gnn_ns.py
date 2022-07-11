@@ -255,7 +255,7 @@ def test():
     return train_acc, valid_acc, test_acc
 
 time_used = []
-test()  # Test if inference on GPU succeeds.
+# test()  # Test if inference on GPU succeeds.
 for run in range(args.runs):
     st = time.perf_counter()
     model.reset_parameters()

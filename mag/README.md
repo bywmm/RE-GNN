@@ -30,4 +30,6 @@ python graph_saint.py
 | RGCN      | OOM           |               |               |                   |
 | RGCN-Saint| 47.73 ± 0.36  | 337.103s      | 30            | SAINT-train only  |
 | RGCN_SAGE | 45.11 ± 0.44  | 214.7822s     | 3             | SAGE_train & test |
-| REGNN_dev |
+| REGNN_dev | 41.22 ± 0.30  | 167.5164s     | 3             | a=1               |
+| REGNN_dev | 40.83 ± 0.55  | 162.1781s     | 3             | a=10              |
+| REGNN-S   | 36.89 ± 4.70  | 164.8299s     | 3             | softmax           |
