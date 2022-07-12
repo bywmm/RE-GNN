@@ -5,14 +5,15 @@ import time
 
 import torch
 import torch.nn.functional as F
-from torch.nn import ModuleList, Linear, ModuleDict, Parameter, init
+from torch.nn import ModuleList, Linear, ParameterDict, Parameter, init
 from torch_sparse import SparseTensor
 from torch_geometric.utils import to_undirected
 from torch_geometric.loader import NeighborSampler
 from torch_geometric.utils.hetero import group_hetero_graph
 from torch_geometric.nn import MessagePassing
 from utils import weighted_degree, get_self_loop_index, softmax
-import numpy as np
+
+# from torchstat import stat
 
 from ogb.nodeproppred import PygNodePropPredDataset, Evaluator
 
@@ -21,23 +22,14 @@ from logger import Logger
 parser = argparse.ArgumentParser(description='OGBN-MAG (SAGE)')
 parser.add_argument('--device', type=int, default=0)
 parser.add_argument('--num_layers', type=int, default=2)
-parser.add_argument('--hidden_channels', type=int, default=128)
+parser.add_argument('--hidden_channels', type=int, default=64)
 parser.add_argument('--dropout', type=float, default=0.5)
 parser.add_argument('--lr', type=float, default=0.01)
 parser.add_argument('--epochs', type=int, default=3)
 parser.add_argument('--runs', type=int, default=10)
 parser.add_argument('--train_batch_size', type=int, default=1024)
 parser.add_argument('--test_batch_size', type=int, default=2048)
-parser.add_argument('--scaling_factor', type=float, default=1.)
-parser.add_argument('--feats_type', type=int, default=3,
-                    help='Type of the node features used. ' + 
-                         '1 - target node features (zero vec for others); ' +
-                         '2 - target node features (id vec for others); ' +
-                         '3 - target node features (random features for others); ' +
-                         '? - all id vec.'
-                    ) # Note that OGBN-MAG only has target node features.
-parser.add_argument('--use_bn', action='store_true', default=False)
-
+parser.add_argument('--scaling_factor', type=float, default=100.)
 args = parser.parse_args()
 print(args)
 
@@ -50,6 +42,7 @@ logger = Logger(args.runs, args)
 
 # print(data)
 
+
 # We do not consider those attributes for now.
 data.node_year_dict = None
 data.edge_reltype_dict = None
@@ -58,7 +51,7 @@ data.edge_reltype_dict = None
 
 edge_index_dict = data.edge_index_dict
 
-# Add reverse edges to the heterogeneous graph.
+# We need to add reverse edges to the heterogeneous graph.
 r, c = edge_index_dict[('author', 'affiliated_with', 'institution')]
 edge_index_dict[('institution', 'to', 'author')] = torch.stack([c, r])
 
@@ -101,38 +94,15 @@ edge_index, edge_type, node_type, local_node_idx, local2global, key2int = out
 
 
 # Map informations to their canonical type.
-
-# only target nodes (Paper) have raw features
 x_dict = {}
-target_node_type = None
 for key, x in data.x_dict.items():
-    target_node_type = key
     x_dict[key2int[key]] = x
 
 num_nodes_dict = {}
-num_feature_dict = {}
 for key, N in data.num_nodes_dict.items():
     num_nodes_dict[key2int[key]] = N
-    if key != target_node_type:
-        # 1 - target node features (zero vec for others)
-        if args.feats_type == 1:
-            x_dict[key2int[key]] = torch.zeros(N, 128)
-            num_feature_dict[key2int[key]] = 128
-        # 2 - target node features (id vec for others)
-        elif args.feats_type == 2:
-            indices = np.vstack((np.arange(N), np.arange(N)))
-            indices = torch.LongTensor(indices)
-            values = torch.FloatTensor(np.ones(N))
-            x_dict[key2int[key]] = torch.sparse.FloatTensor(indices, values, torch.Size([N, N]))
-            num_feature_dict[key2int[key]] = N
-            
-        # 3 - target node features (random features for others)
-        elif args.feats_type == 3:
-            x_dict[key2int[key]] = torch.rand(N, 128)
-            num_feature_dict[key2int[key]] = 128
-    else:
-        num_feature_dict[key2int[key]] = 128
-     
+
+# Next, we create a train sampler that only iterates over the respective
 # paper training nodes.
 paper_idx = local2global['paper']
 paper_train_idx = paper_idx[split_idx['train']['paper']]
@@ -229,7 +199,7 @@ class REGCNConv(MessagePassing):
 
 class REGCN(torch.nn.Module):
     def __init__(self, in_channels, hidden_channels, out_channels, num_layers, scaling_factor,
-                 dropout, num_feature_dict, num_edge_types, use_bn):
+                 dropout, num_nodes_dict, x_types, num_edge_types):
         super(REGCN, self).__init__()
 
         self.in_channels = in_channels
@@ -237,43 +207,39 @@ class REGCN(torch.nn.Module):
         self.out_channels = out_channels
         self.num_layers = num_layers
         self.dropout = dropout
-        self.use_bn = use_bn
 
-        node_types = list(num_feature_dict.keys())
+        node_types = list(num_nodes_dict.keys())
         num_node_types = len(node_types)
 
         self.num_node_types = num_node_types
         self.num_edge_types = num_edge_types
 
-        # Feature Projection
-        self.lins = ModuleDict()
-        for key in set(node_types): 
-            self.lins[str(key)] = Linear(num_feature_dict[key], hidden_channels)
+        # Create embeddings for all node types that do not come with features.
+        self.emb_dict = ParameterDict({
+            f'{key}': Parameter(torch.Tensor(num_nodes_dict[key], in_channels))
+            for key in set(node_types).difference(set(x_types))
+        })
 
-        # REGNNConv
+        I, H, O = in_channels, hidden_channels, out_channels  # noqa
+
+        # Create `num_layers` many message passing layers.
         self.convs = ModuleList()
-        self.convs.append(REGCNConv(hidden_channels, hidden_channels, num_node_types, num_edge_types, scaling_factor))
+        self.convs.append(REGCNConv(I, H, num_node_types, num_edge_types, scaling_factor))
         for _ in range(num_layers - 2):
-            self.convs.append(REGCNConv(hidden_channels, hidden_channels, num_node_types, num_edge_types, scaling_factor))
-        self.convs.append(REGCNConv(hidden_channels, out_channels, self.num_node_types, num_edge_types, scaling_factor))
+            self.convs.append(REGCNConv(H, H, num_node_types, num_edge_types, scaling_factor))
+        self.convs.append(REGCNConv(H, O, self.num_node_types, num_edge_types, scaling_factor))
 
         self.prelus = ModuleList()
         for _ in range(num_layers-1):
             self.prelus.append(torch.nn.PReLU())
 
-        self.bns = ModuleList()
-        for _ in range(num_layers-1):
-            self.bns.append(torch.nn.BatchNorm1d(self.hidden_channels))
-
         self.reset_parameters()
 
     def reset_parameters(self):
-        for lin in self.lins.values():
-            lin.reset_parameters()
+        for emb in self.emb_dict.values():
+            torch.nn.init.xavier_uniform_(emb)
         for conv in self.convs:
             conv.reset_parameters()
-        for bn in self.bns:
-            bn.reset_parameters()
 
     def group_input(self, x_dict, node_type, local_node_idx, n_id=None):
         # Create global node feature matrix.
@@ -281,12 +247,16 @@ class REGCN(torch.nn.Module):
             node_type = node_type[n_id]
             local_node_idx = local_node_idx[n_id]
 
-        h = torch.zeros((node_type.size(0), self.hidden_channels),
+        h = torch.zeros((node_type.size(0), self.in_channels),
                         device=node_type.device)
 
         for key, x in x_dict.items():
             mask = node_type == key
-            h[mask] = self.lins[str(key)](x[local_node_idx[mask]])
+            h[mask] = x[local_node_idx[mask]]
+
+        for key, emb in self.emb_dict.items():
+            mask = node_type == int(key)
+            h[mask] = emb[local_node_idx[mask]]
 
         return h
 
@@ -302,18 +272,18 @@ class REGCN(torch.nn.Module):
             conv = self.convs[i]
             x = conv((x, x_target), edge_index, edge_type[e_id])
             if i != self.num_layers - 1:
-                if self.use_bn:
-                    x = self.bns[i](x)
                 x = self.prelus[i](x)
                 x = F.dropout(x, p=self.dropout, training=self.training)
 
         return x.log_softmax(dim=-1)
 
 
+
 device = f'cuda:{args.device}' if torch.cuda.is_available() else 'cpu'
 
 model = REGCN(128, args.hidden_channels, dataset.num_classes, args.num_layers, args.scaling_factor,
-             args.dropout, num_feature_dict, len(edge_index_dict.keys()), args.use_bn).to(device)
+             args.dropout, num_nodes_dict, list(x_dict.keys()),
+             len(edge_index_dict.keys())).to(device)
 
 # sum_p = sum(p.numel() for p in model.parameters())
 # print(sum_p)
