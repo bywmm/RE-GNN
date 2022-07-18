@@ -13,12 +13,13 @@ from torch_geometric.utils.hetero import group_hetero_graph
 from torch_geometric.nn import MessagePassing
 from utils import weighted_degree, get_self_loop_index, softmax
 import numpy as np
+import os
 
 from ogb.nodeproppred import PygNodePropPredDataset, Evaluator
 
 from logger import Logger
 
-parser = argparse.ArgumentParser(description='OGBN-MAG (SAGE)')
+parser = argparse.ArgumentParser(description='OGBN-MAG')
 parser.add_argument('--device', type=int, default=0)
 parser.add_argument('--num_layers', type=int, default=2)
 parser.add_argument('--hidden_channels', type=int, default=128)
@@ -34,6 +35,7 @@ parser.add_argument('--feats_type', type=int, default=3,
                          '1 - target node features (zero vec for others); ' +
                          '2 - target node features (id vec for others); ' +
                          '3 - target node features (random features for others); ' +
+                         '4 - target node features (Complex emb for others);' + 
                          '? - all id vec.'
                     ) # Note that OGBN-MAG only has target node features.
 parser.add_argument('--use_bn', action='store_true', default=False)
@@ -128,11 +130,17 @@ for key, N in data.num_nodes_dict.items():
             
         # 3 - target node features (random features for others)
         elif args.feats_type == 3:
-            x_dict[key2int[key]] = torch.rand(N, 128)
+            x_dict[key2int[key]] = torch.Tensor(N, 128).uniform_(-0.5, 0.5)
             num_feature_dict[key2int[key]] = 128
+        # 4 - Use extra embeddings generated with the Complex method
+        elif args.feats_type == 4:
+            home_dir = os.getenv("HOME")
+            path = os.path.join(home_dir, "projects/gcns/15-heterogeneous/SeHGNN/data/complex_nars")
+            x_dict[key2int[key]] = torch.load(os.path.join(path, key+'.pt'), map_location=torch.device('cpu')).float()
+            num_feature_dict[key2int[key]] = x_dict[key2int[key]].size(1)
     else:
         num_feature_dict[key2int[key]] = 128
-     
+
 # paper training nodes.
 paper_idx = local2global['paper']
 paper_train_idx = paper_idx[split_idx['train']['paper']]
