@@ -39,6 +39,7 @@ parser.add_argument('--feats_type', type=int, default=3,
                          '? - all id vec.'
                     ) # Note that OGBN-MAG only has target node features.
 parser.add_argument('--use_bn', action='store_true', default=False)
+parser.add_argument('--residual', action='store_true', default=False)
 
 args = parser.parse_args()
 print(args)
@@ -86,6 +87,15 @@ edge_index_dict[('institution', 'selfloop', 'institution')] = self_loop_index
 
 self_loop_index = get_self_loop_index(num_node=data.num_nodes_dict['paper'])
 edge_index_dict[('paper', 'selfloop', 'paper')] = self_loop_index
+
+
+# del edge_index_dict[('author', 'affiliated_with', 'institution')]
+# del edge_index_dict[('institution', 'to', 'author')]
+# del edge_index_dict[('author', 'writes', 'paper')]
+# del edge_index_dict[('paper', 'to', 'author')]
+# del edge_index_dict[('author', 'selfloop', 'author')]
+# del edge_index_dict[('institution', 'selfloop', 'institution')]
+# print(edge_index_dict.keys())
 
 
 # We convert the individual graphs into a single big one, so that sampling
@@ -145,11 +155,17 @@ for key, N in data.num_nodes_dict.items():
 paper_idx = local2global['paper']
 paper_train_idx = paper_idx[split_idx['train']['paper']]
 
+if args.num_layers == 2:
+    tr_size = [25, 20]           # batch_size 1024
+elif args.num_layers == 3:
+    tr_size = [20, 15, 10]       # batch_size 256
+elif args.num_layers == 4:
+    tr_size = [20, 15, 10, 10]   # batch_size 32
 train_loader = NeighborSampler(edge_index, node_idx=paper_train_idx,
-                               sizes=[25, 20], batch_size=args.train_batch_size, shuffle=True,
+                               sizes=tr_size, batch_size=args.train_batch_size, shuffle=True,
                                num_workers=12)
 test_loader = NeighborSampler(edge_index, node_idx=paper_idx,
-                               sizes=[25, 20], batch_size=args.test_batch_size, shuffle=False,
+                               sizes=tr_size, batch_size=args.test_batch_size, shuffle=False,
                                num_workers=12)
 
 class REGCNConv(MessagePassing):
@@ -237,7 +253,7 @@ class REGCNConv(MessagePassing):
 
 class REGCN(torch.nn.Module):
     def __init__(self, in_channels, hidden_channels, out_channels, num_layers, scaling_factor,
-                 dropout, num_feature_dict, num_edge_types, use_bn):
+                 dropout, num_feature_dict, num_edge_types, use_bn, residual):
         super(REGCN, self).__init__()
 
         self.in_channels = in_channels
@@ -246,6 +262,7 @@ class REGCN(torch.nn.Module):
         self.num_layers = num_layers
         self.dropout = dropout
         self.use_bn = use_bn
+        self.residual = residual
 
         node_types = list(num_feature_dict.keys())
         num_node_types = len(node_types)
@@ -310,6 +327,8 @@ class REGCN(torch.nn.Module):
             conv = self.convs[i]
             x = conv((x, x_target), edge_index, edge_type[e_id])
             if i != self.num_layers - 1:
+                if self.residual:
+                    x = x + x_target
                 if self.use_bn:
                     x = self.bns[i](x)
                 x = self.prelus[i](x)
@@ -321,7 +340,7 @@ class REGCN(torch.nn.Module):
 device = f'cuda:{args.device}' if torch.cuda.is_available() else 'cpu'
 
 model = REGCN(128, args.hidden_channels, dataset.num_classes, args.num_layers, args.scaling_factor,
-             args.dropout, num_feature_dict, len(edge_index_dict.keys()), args.use_bn).to(device)
+             args.dropout, num_feature_dict, len(edge_index_dict.keys()), args.use_bn, args.residual).to(device)
 
 # sum_p = sum(p.numel() for p in model.parameters())
 # print(sum_p)

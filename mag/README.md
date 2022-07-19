@@ -33,5 +33,8 @@ python graph_saint.py
 | REGNN_dev     | 41.22 ± 0.30  | 167.5164s     | 3             | 154,151,923   | a=1               |
 | REGNN_dev     | 40.83 ± 0.55  | 162.1781s     | 3             | 154,151,923   | a=10              |
 | REGNN-S       | 36.89 ± 4.70  | 164.8299s     | 3             | 154,151,923   | softmax           |
-| REGNN-3       | 42.90         | 37674.5703s   | 500           | 
-| REGNN-4       | 44.69         | 37874.0664s   | 500           |
+| REGNN-3       | 42.90         | 37674.5703s   | 500           |               | bn                |
+| REGNN-4       | 44.69         | 37874.0664s   | 500           |               | bn                |
+| REGNN-3-res   | 45.75 ± 0.36  | 8105.6509s    | 100           |               | bn-2layer         |
+| REGNN-3-res   | -             |-              | 100           |               | bn-3layer-bs256   |
+| REGNN-3-res   | Test-OOM      |               |               |               | bn-4layer-bs32    |
