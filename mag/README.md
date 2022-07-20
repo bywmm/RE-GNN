@@ -38,3 +38,4 @@ python graph_saint.py
 | REGNN-3-res   | 45.75 ± 0.36  | 8105.6509s    | 100           |               | bn-2layer         |
 | REGNN-3-res   | -             |-              | 100           |               | bn-3layer-bs256   |
 | REGNN-3-res   | Test-OOM      |               |               |               | bn-4layer-bs32    |
+| REGNN-3-res   | 46.90 ± 0.30  | 17022.2910s   | 100           |               | bn-subgraph_test  |
