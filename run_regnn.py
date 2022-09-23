@@ -124,18 +124,14 @@ def run(args):
         net.train()
         early_stopping = EarlyStopping(patience=args.patience, verbose=False,
                                        save_path='checkpoint/checkpoint_{}.pt'.format(args.save_postfix))
+        times_per_epoch = []
         for epoch in range(args.epochs):
             t_start = time.time()
-            # training
             net.train()
-            # forward
             logits = net(features_list, e_feat)
             train_loss = loss_fn(logits[train_idx], labels[train_idx])
-
-            # autograd
             optimizer.zero_grad()
             train_loss.backward()
-
             optimizer.step()
 
             net.eval()
@@ -144,9 +140,11 @@ def run(args):
                 val_loss = loss_fn(logits[val_idx], labels[val_idx])
                 val_acc, val_mif1, val_maf1 = score(logits[val_idx], labels[val_idx])
             t_end = time.time()
+            t_used = t_end - t_start
+            times_per_epoch.append(t_used)
             # print validation info
             print('Epoch {:05d} | Train_Loss {:.4f} | Val_Loss {:.4f}, Val_mif1 {:.4f}, Val_maf1 {:.4f} | Time(s) {:.4f}'.format(
-                epoch, train_loss.item(), val_loss.item(), val_mif1, val_maf1, t_end - t_start))
+                epoch, train_loss.item(), val_loss.item(), val_mif1, val_maf1, t_used))
             # early stopping
             early_stopping(val_loss, net)
             if early_stopping.early_stop:
@@ -161,6 +159,8 @@ def run(args):
             logits = net(features_list, e_feat)
             test_embeddings = logits[test_idx]
             print('-----------')
+            times_per_epoch = torch.tensor(times_per_epoch)
+            print(f'Times per epoch: {times_per_epoch.mean()}s')
             print(score(logits[test_idx],labels[test_idx]))
             print('-----------')
             svm_macro_f1_list, svm_micro_f1_list, nmi_mean, nmi_std, ari_mean, ari_std = evaluate_results_nc(
@@ -205,7 +205,7 @@ if __name__ == '__main__':
     ap.add_argument('--epochs', type=int, default=200, help='Number of epochs. Default is 100.')
     ap.add_argument('--patience', type=int, default=50, help='Patience. Default is 5.')
     ap.add_argument('--repeat', type=int, default=1, help='Repeat the training and testing for N times. Default is 1.')
-    ap.add_argument('--save-postfix', default='ACM', help='Postfix for the saved model and result. Default is DBLP.')
+    ap.add_argument('--save-postfix', default='DBLP', help='Postfix for the saved model and result. Default is DBLP.')
     ap.add_argument('--device', type=int, default=5)
     ap.add_argument('--dropout', type=float, default=0.6)
     ap.add_argument('--lr', type=float, default=0.001)

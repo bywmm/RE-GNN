@@ -32,7 +32,7 @@ class REGATConv(nn.Module):
         self.attn_drop = nn.Dropout(attn_drop)
         self.leaky_relu = nn.LeakyReLU(negative_slope)
 
-        self.edge_weight = nn.Parameter(th.Tensor(self.num_etypes, self.num_heads))
+        self.edge_weight = nn.Parameter(th.Tensor(self.num_etypes, self.num_heads), requires_grad=True)
         self.alpha = 100.0
         
         if residual:
