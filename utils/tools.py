@@ -26,7 +26,7 @@ def kmeans_test(X, y, n_clusters, repeat=10):
     return np.mean(nmi_list), np.std(nmi_list), np.mean(ari_list), np.std(ari_list)
 
 
-def svm_test(X, y, test_sizes=(0.2, 0.4, 0.6, 0.8), repeat=10):
+def svm_test(X, y, test_sizes=(0.05, 0.1, 0.2, 0.4, 0.6, 0.8), repeat=10):
     random_states = [182318 + i for i in range(repeat)]
     result_macro_f1_list = []
     result_micro_f1_list = []
@@ -53,10 +53,10 @@ def evaluate_results_nc(embeddings, labels, num_classes):
     svm_macro_f1_list, svm_micro_f1_list = svm_test(embeddings, labels)
     print('Macro-F1: ' + ', '.join(['{:.6f}~{:.6f} ({:.1f})'.format(macro_f1_mean, macro_f1_std, train_size) for
                                     (macro_f1_mean, macro_f1_std), train_size in
-                                    zip(svm_macro_f1_list, [0.8, 0.6, 0.4, 0.2])]))
+                                    zip(svm_macro_f1_list, [0.8, 0.6, 0.4, 0.2, 0.1, 0.05])]))
     print('Micro-F1: ' + ', '.join(['{:.6f}~{:.6f} ({:.1f})'.format(micro_f1_mean, micro_f1_std, train_size) for
                                     (micro_f1_mean, micro_f1_std), train_size in
-                                    zip(svm_micro_f1_list, [0.8, 0.6, 0.4, 0.2])]))
+                                    zip(svm_micro_f1_list, [0.8, 0.6, 0.4, 0.2, 0.1, 0.05])]))
     # print('K-means test')
     nmi_mean, nmi_std, ari_mean, ari_std = kmeans_test(embeddings, labels, num_classes)
     # print('NMI: {:.6f}~{:.6f}'.format(nmi_mean, nmi_std))

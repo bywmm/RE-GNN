@@ -10,6 +10,7 @@ from dgl.nn.pytorch.utils import Identity
 class REGATConv(nn.Module):
     def __init__(self,
                  num_etypes,
+                 scaling_factor,
                  in_feats,
                  out_feats,
                  num_heads,
@@ -33,7 +34,7 @@ class REGATConv(nn.Module):
         self.leaky_relu = nn.LeakyReLU(negative_slope)
 
         self.edge_weight = nn.Parameter(th.Tensor(self.num_etypes, self.num_heads), requires_grad=True)
-        self.alpha = 100.0
+        self.alpha = scaling_factor
         
         if residual:
             if in_feats != out_feats:
