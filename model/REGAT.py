@@ -1,13 +1,13 @@
 import torch
 import torch.nn as nn
 
-from dgl.nn.pytorch import edge_softmax
 from layer import REGATConv
 
 class REGAT(nn.Module):
     def __init__(self,
                  g,
                  num_etypes,
+                 R,
                  num_layers,
                  in_dim,
                  num_hidden,
@@ -34,19 +34,19 @@ class REGAT(nn.Module):
 
         # input projection (no residual)
         self.gat_layers.append(REGATConv(
-            self.num_etypes, in_dim, num_hidden, heads[0],
+            self.num_etypes, R, in_dim, num_hidden, heads[0],
             feat_drop, attn_drop, negative_slope, False, self.activation))
         # hidden layers
         for l in range(1, num_layers):
             # due to multi-head, the in_dim = num_hidden * num_heads
             # self.bns.append(nn.BatchNorm1d(num_hidden * heads[l-1]))
             self.gat_layers.append(REGATConv(
-                self.num_etypes, num_hidden * heads[l-1], num_hidden, heads[l],
+                self.num_etypes, R, num_hidden * heads[l-1], num_hidden, heads[l],
                 feat_drop, attn_drop, negative_slope, residual, self.activation))
         self.bns.append(nn.BatchNorm1d(num_hidden * heads[-2]))
         # output projection
         self.gat_layers.append(REGATConv(
-            self.num_etypes, num_hidden * heads[-2], num_classes, heads[-1],
+            self.num_etypes, R, num_hidden * heads[-2], num_classes, heads[-1],
             feat_drop, attn_drop, negative_slope, residual, None))
 
     def forward(self, features_list, e_feat):

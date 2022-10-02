@@ -8,6 +8,7 @@ from dgl import function as fn
 class REGraphConv(nn.Module):
     def __init__(self,
                  num_etypes,
+                 scaling_factor,
                  in_feats,
                  out_feats,
                  norm=True,
@@ -22,8 +23,8 @@ class REGraphConv(nn.Module):
         self.dropout = dropout
 
         # may add multi-head
-        self.edge_weight = nn.Parameter(th.Tensor(num_etypes, 1))
-        self.alpha = 100.0
+        self.edge_weight = nn.Parameter(th.Tensor(num_etypes, 1), requires_grad=True)
+        self.alpha = scaling_factor
         
         if weight:
             self.weight = nn.Parameter(th.Tensor(in_feats, out_feats))

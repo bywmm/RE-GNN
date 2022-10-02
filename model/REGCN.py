@@ -1,8 +1,5 @@
 import torch
 import torch.nn as nn
-import dgl
-
-import dgl.function as fn
 from layer import REGraphConv
 
 
@@ -10,6 +7,7 @@ class REGCN(nn.Module):
     def __init__(self,
                  g,
                  num_etypes,
+                 R,
                  in_feats,
                  n_hidden,
                  n_classes,
@@ -26,12 +24,12 @@ class REGCN(nn.Module):
 
         self.layers = nn.ModuleList()
         # input layer
-        self.layers.append(REGraphConv(num_etypes, in_feats, n_hidden, bias=False, activation=None, dropout=dropout, weight=False))
+        self.layers.append(REGraphConv(num_etypes, R, in_feats, n_hidden, bias=False, activation=None, dropout=dropout, weight=False))
         # hidden layers
         for i in range(n_layers - 1):
-            self.layers.append(REGraphConv(num_etypes, n_hidden, n_hidden, activation=activation, dropout=dropout))
+            self.layers.append(REGraphConv(num_etypes, R, n_hidden, n_hidden, activation=activation, dropout=dropout))
         # output layer
-        self.layers.append(REGraphConv(num_etypes, n_hidden, n_classes, dropout=dropout))
+        self.layers.append(REGraphConv(num_etypes, R, n_hidden, n_classes, dropout=dropout))
         self.dropout = nn.Dropout(p=dropout)
 
     def forward(self, features_list, e_feat):
