@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 
-from layer import REGATConv
+from layer import REGATConv, REGATv2Conv
 
 class REGAT(nn.Module):
     def __init__(self,
@@ -18,7 +18,8 @@ class REGAT(nn.Module):
                  attn_drop,
                  negative_slope,
                  residual,
-                 feats_dim_list):
+                 feats_dim_list,
+                 use_gatv2=False):
         super(REGAT, self).__init__()
         self.g = g
         self.num_etypes = num_etypes
@@ -32,20 +33,21 @@ class REGAT(nn.Module):
         for fc in self.fc_list:
             nn.init.xavier_normal_(fc.weight, gain=1.414)
 
+        GConv = REGATv2Conv if use_gatv2 else REGATConv
         # input projection (no residual)
-        self.gat_layers.append(REGATConv(
+        self.gat_layers.append(GConv(
             self.num_etypes, R, in_dim, num_hidden, heads[0],
             feat_drop, attn_drop, negative_slope, False, self.activation))
         # hidden layers
         for l in range(1, num_layers):
             # due to multi-head, the in_dim = num_hidden * num_heads
             # self.bns.append(nn.BatchNorm1d(num_hidden * heads[l-1]))
-            self.gat_layers.append(REGATConv(
+            self.gat_layers.append(GConv(
                 self.num_etypes, R, num_hidden * heads[l-1], num_hidden, heads[l],
                 feat_drop, attn_drop, negative_slope, residual, self.activation))
         self.bns.append(nn.BatchNorm1d(num_hidden * heads[-2]))
         # output projection
-        self.gat_layers.append(REGATConv(
+        self.gat_layers.append(GConv(
             self.num_etypes, R, num_hidden * heads[-2], num_classes, heads[-1],
             feat_drop, attn_drop, negative_slope, residual, None))
 

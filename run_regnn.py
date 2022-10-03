@@ -9,7 +9,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from sklearn.metrics import f1_score
 
-from model import REGAT, REGCN
+from model import REGAT, REGCN, REMixHop
 
 from utils.pytorchtools import EarlyStopping
 from utils.data import load_data
@@ -115,9 +115,18 @@ def run(args):
         if args.model == 'regat':
             net = REGAT(g, num_etype+num_ntype, args.R, args.num_layers, args.hidden_dim, args.hidden_dim,
                          num_classes, heads, F.elu, args.dropout, args.dropout, 0.01, False, in_dims)
+        if args.model == 'regatv2':
+            net = REGAT(g, num_etype+num_ntype, args.R, args.num_layers, args.hidden_dim, args.hidden_dim,
+                         num_classes, heads, F.elu, args.dropout, args.dropout, 0.01, False, in_dims, use_gatv2=True)
         elif args.model == 'regcn':
             net = REGCN(g, num_etype+num_ntype, args.R, args.hidden_dim, args.hidden_dim, num_classes,
                          args.num_layers, F.elu, args.dropout, in_dims)
+        elif args.model == 'resage':
+            net = REGCN(g, num_etype+num_ntype, args.R, args.hidden_dim, args.hidden_dim, num_classes,
+                         args.num_layers, F.elu, args.dropout, in_dims, use_sage=True)
+        elif args.model == 'remixhop':
+            net = REMixHop(g, num_etype+num_ntype, args.R, args.hidden_dim, args.hidden_dim, num_classes,
+                         args.num_layers, in_dims, input_dropout=args.dropout, activation=F.elu)
         net.to(device)
         optimizer = torch.optim.Adam(net.parameters(), lr=args.lr, weight_decay=args.weight_decay)
 
