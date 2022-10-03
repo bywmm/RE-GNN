@@ -4,7 +4,6 @@ from torch.nn import init
 
 from dgl import function as fn
 
-
 class REGraphConv(nn.Module):
     def __init__(self,
                  num_etypes,

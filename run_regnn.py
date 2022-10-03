@@ -9,7 +9,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from sklearn.metrics import f1_score
 
-from model import REGAT, REGCN, REMixHop
+from model import REGAT, REGCN, REMixHop, REGIN
 
 from utils.pytorchtools import EarlyStopping
 from utils.data import load_data
@@ -124,6 +124,9 @@ def run(args):
         elif args.model == 'resage':
             net = REGCN(g, num_etype+num_ntype, args.R, args.hidden_dim, args.hidden_dim, num_classes,
                          args.num_layers, F.elu, args.dropout, in_dims, use_sage=True)
+        elif args.model == 'regin':
+            net = REGIN(g, num_etype+num_ntype, args.R, args.hidden_dim, args.hidden_dim, num_classes,
+                         args.num_layers, F.elu, args.dropout, in_dims)
         elif args.model == 'remixhop':
             net = REMixHop(g, num_etype+num_ntype, args.R, args.hidden_dim, args.hidden_dim, num_classes,
                          args.num_layers, in_dims, input_dropout=args.dropout, activation=F.elu)
