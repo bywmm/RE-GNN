@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from layer import REGraphConv
+from layer import REGraphConv, RESAGEConv
 
 
 class REGCN(nn.Module):
@@ -14,7 +14,8 @@ class REGCN(nn.Module):
                  n_layers,
                  activation,
                  dropout,
-                 feats_dim_list):
+                 feats_dim_list,
+                 use_sage=False):
         super(REGCN, self).__init__()
         self.g = g
         self.num_layers = n_layers
@@ -23,13 +24,14 @@ class REGCN(nn.Module):
             nn.init.xavier_normal_(fc.weight, gain=1.414)
 
         self.layers = nn.ModuleList()
+        GConv = RESAGEConv if use_sage else REGraphConv
         # input layer
-        self.layers.append(REGraphConv(num_etypes, R, in_feats, n_hidden, bias=False, activation=None, dropout=dropout, weight=False))
+        self.layers.append(GConv(num_etypes, R, in_feats, n_hidden, bias=False, activation=None, dropout=dropout, weight=False))
         # hidden layers
         for i in range(n_layers - 1):
-            self.layers.append(REGraphConv(num_etypes, R, n_hidden, n_hidden, activation=activation, dropout=dropout))
+            self.layers.append(GConv(num_etypes, R, n_hidden, n_hidden, activation=activation, dropout=dropout))
         # output layer
-        self.layers.append(REGraphConv(num_etypes, R, n_hidden, n_classes, dropout=dropout))
+        self.layers.append(GConv(num_etypes, R, n_hidden, n_classes, dropout=dropout))
         self.dropout = nn.Dropout(p=dropout)
 
     def forward(self, features_list, e_feat):
