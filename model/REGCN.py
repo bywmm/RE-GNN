@@ -25,12 +25,9 @@ class REGCN(nn.Module):
 
         self.layers = nn.ModuleList()
         GConv = RESAGEConv if use_sage else REGraphConv
-        # input layer
         self.layers.append(GConv(num_etypes, R, in_feats, n_hidden, bias=False, activation=None, dropout=dropout, weight=False))
-        # hidden layers
-        for i in range(n_layers - 1):
+        for i in range(1, n_layers - 1):
             self.layers.append(GConv(num_etypes, R, n_hidden, n_hidden, activation=activation, dropout=dropout))
-        # output layer
         self.layers.append(GConv(num_etypes, R, n_hidden, n_classes, dropout=dropout))
         self.dropout = nn.Dropout(p=dropout)
 
@@ -41,7 +38,7 @@ class REGCN(nn.Module):
         h = torch.cat(h, 0)
         h = self.layers[0](self.g, h, e_feat)
 
-        for l in range(1, self.num_layers+1):
+        for l in range(1, self.num_layers):
             h = self.dropout(h)
             h = self.layers[l](self.g, h, e_feat)
         return h

@@ -211,7 +211,8 @@ def run(args):
     time_used = torch.tensor(time_used)
     print("Used Time:", time_used.mean(), time_used.std())
 
-    filename = f'results/{args.model}-' + f'{args.dataset}.csv'
+    nore = '-noRE' if args.no_re else ''
+    filename = f'results/{args.model}-' +  f'{args.dataset}' + nore + '.csv'
     print(f"Saving results to {filename}")
     with open(f"{filename}", 'a+') as write_obj:
         write_obj.write(f"{args.model}," + 
@@ -239,7 +240,7 @@ if __name__ == '__main__':
                          '3 - all id vec.')
     ap.add_argument('--hidden_dim', type=int, default=64, help='Dimension of the node hidden state. Default is 64.')
     ap.add_argument('--num_heads', type=int, default=8, help='Number of the attention heads. Default is 8.')
-    ap.add_argument('--num_layers', type=int, default=3)
+    ap.add_argument('--num_layers', type=int, default=4)
     ap.add_argument('--epochs', type=int, default=200, help='Number of epochs. Default is 100.')
     ap.add_argument('--patience', type=int, default=50, help='Patience. Default is 5.')
     ap.add_argument('--repeat', type=int, default=1, help='Repeat the training and testing for N times. Default is 1.')
@@ -249,9 +250,14 @@ if __name__ == '__main__':
     ap.add_argument('--lr', type=float, default=0.001)
     ap.add_argument('--weight_decay', type=float, default=0.001)
     ap.add_argument('--R', type=float, default=100)
+    ap.add_argument('--no_re', action='store_true')
 
 
     args = ap.parse_args()
+
+    if args.no_re:
+        args.R = 1e-10
+
     print(args)
 
     run(args)

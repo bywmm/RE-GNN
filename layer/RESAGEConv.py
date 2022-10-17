@@ -23,7 +23,7 @@ class RESAGEConv(nn.Module):
         self.dropout = dropout
 
         # may add multi-head
-        self.edge_weight = nn.Parameter(th.Tensor(num_etypes, 1), requires_grad=True)
+        self.edge_weight = nn.Parameter(th.Tensor(num_etypes, 1), requires_grad=False)
         self.alpha = scaling_factor
         
         if weight:

@@ -39,7 +39,7 @@ class REGAT(nn.Module):
             self.num_etypes, R, in_dim, num_hidden, heads[0],
             feat_drop, attn_drop, negative_slope, False, self.activation))
         # hidden layers
-        for l in range(1, num_layers):
+        for l in range(1, num_layers-1):
             # due to multi-head, the in_dim = num_hidden * num_heads
             # self.bns.append(nn.BatchNorm1d(num_hidden * heads[l-1]))
             self.gat_layers.append(GConv(
@@ -58,7 +58,7 @@ class REGAT(nn.Module):
         h = torch.cat(h, 0)
         h = self.gat_layers[0](self.g, h, e_feat).flatten(1)
         
-        for l in range(1, self.num_layers):
+        for l in range(1, self.num_layers-1):
             h = self.gat_layers[l](self.g, h, e_feat).flatten(1)
             # h = self.bns[l](h)
         # output projection
