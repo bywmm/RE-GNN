@@ -243,7 +243,7 @@ if __name__ == '__main__':
     ap.add_argument('--num_layers', type=int, default=4)
     ap.add_argument('--epochs', type=int, default=200, help='Number of epochs. Default is 100.')
     ap.add_argument('--patience', type=int, default=50, help='Patience. Default is 5.')
-    ap.add_argument('--repeat', type=int, default=1, help='Repeat the training and testing for N times. Default is 1.')
+    ap.add_argument('--repeat', type=int, default=10, help='Repeat the training and testing for N times. Default is 1.')
     ap.add_argument('--save_postfix', default='DBLP', help='Postfix for the saved model and result. Default is DBLP.')
     ap.add_argument('--device', type=int, default=5)
     ap.add_argument('--dropout', type=float, default=0.6)

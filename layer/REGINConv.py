@@ -47,7 +47,7 @@ class REGINConv(nn.Module):
             graph.ndata.update({'nones': th.ones(num_nodes, 1).to(feat.device)})
             graph.update_all(fn.u_mul_e('nones', 'ew', 'm'),
                              fn.sum('m', 'norm'))
-            norm = th.pow(graph.ndata['norm'].squeeze().clamp(min=1), -1.0)
+            norm = th.pow(graph.ndata['norm'].squeeze().clamp(min=1), -0.5)
             shp = norm.shape + (1,) * (feat.dim() - 1)
             norm = th.reshape(norm, shp).to(feat.device)
 
@@ -55,7 +55,8 @@ class REGINConv(nn.Module):
             graph.srcdata['h'] = feat_src * norm
             graph.update_all(fn.u_mul_e('h', 'ew', 'm'),
                              fn.sum(msg='m', out='h'))
-            rst = (1 + self.eps) * feat_dst + graph.ndata['h']
+            # rst = (1 + self.eps) * feat_dst + graph.ndata['h']
+            rst = graph.ndata['h'] * norm
             if self.apply_func is not None:
                 rst = self.apply_func(rst)
             # activation

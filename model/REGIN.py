@@ -9,13 +9,14 @@ from layer import REGINConv
 class MLP(nn.Module):
     """Construct two-layer MLP-type aggreator for GIN model"""
 
-    def __init__(self, input_dim, hidden_dim, output_dim, activation):
+    def __init__(self, input_dim, hidden_dim, output_dim, activation, dropout=0.):
         super().__init__()
         self.linears = nn.ModuleList()
         # two-layer MLP
         self.linears.append(nn.Linear(input_dim, hidden_dim, bias=False))
         self.linears.append(nn.Linear(hidden_dim, output_dim, bias=False))
-        self.batch_norm = nn.BatchNorm1d((hidden_dim))
+        self.dropout = nn.Dropout(dropout)
+        self.activation = activation
     
     def reset_parameters(self):
         for lin in self.linears:
@@ -23,7 +24,11 @@ class MLP(nn.Module):
 
     def forward(self, x):
         h = x
-        h = F.relu(self.batch_norm(self.linears[0](h)))
+        h = self.dropout(h)
+        h = self.linears[0](h)
+        if self.activation is not None:
+            h = self.activation(h)
+        h = self.dropout(h)
         return self.linears[1](h)
 
 
@@ -51,10 +56,15 @@ class REGIN(nn.Module):
         for layer in range(n_layers):  # excluding the input layer
             in_c = input_dim if layer ==0 else hidden_dim
             out_c = output_dim if layer == n_layers-1 else hidden_dim
-            mlp = MLP(in_c, hidden_dim, out_c, activation)
-            self.layers.append(REGINConv(num_etypes, R, mlp, learn_eps=False))  
+            mlp = MLP(in_c, hidden_dim, out_c, activation, dropout)
+            self.layers.append(REGINConv(num_etypes, R, mlp, activation=activation))  
 
         self.dropout = nn.Dropout(dropout)
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        for layer in self.layers:
+            layer.reset_parameters()
 
 
     def forward(self, features_list, e_feat):
