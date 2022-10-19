@@ -5,7 +5,7 @@ import time
 
 import torch
 import torch.nn.functional as F
-from torch.nn import ModuleList, Linear, ModuleDict, Parameter, init
+from torch.nn import ModuleList, Linear, ModuleDict, Parameter, init, ParameterDict
 from torch_sparse import SparseTensor
 from torch_geometric.utils import to_undirected
 from torch_geometric.loader import NeighborSampler
@@ -19,7 +19,7 @@ from ogb.nodeproppred import PygNodePropPredDataset, Evaluator
 
 from logger import Logger
 
-parser = argparse.ArgumentParser(description='OGBN-MAG')
+parser = argparse.ArgumentParser(description='OGBN-MAG (REGCN-NS)')
 parser.add_argument('--device', type=int, default=0)
 parser.add_argument('--num_layers', type=int, default=2)
 parser.add_argument('--hidden_channels', type=int, default=128)
@@ -52,17 +52,15 @@ split_idx = dataset.get_idx_split()
 evaluator = Evaluator(name='ogbn-mag')
 logger = Logger(args.runs, args)
 
-# print(data)
-
 # We do not consider those attributes for now.
 data.node_year_dict = None
 data.edge_reltype_dict = None
 
-# print(data)
+print(data)
 
 edge_index_dict = data.edge_index_dict
 
-# Add reverse edges to the heterogeneous graph.
+# We need to add reverse edges to the heterogeneous graph.
 r, c = edge_index_dict[('author', 'affiliated_with', 'institution')]
 edge_index_dict[('institution', 'to', 'author')] = torch.stack([c, r])
 
@@ -112,9 +110,7 @@ edge_index_dict[('paper', 'selfloop', 'paper')] = self_loop_index
 out = group_hetero_graph(data.edge_index_dict, data.num_nodes_dict)
 edge_index, edge_type, node_type, local_node_idx, local2global, key2int = out
 
-
 # Map informations to their canonical type.
-
 # only target nodes (Paper) have raw features
 x_dict = {}
 target_node_type = None
@@ -135,12 +131,14 @@ for key, N in data.num_nodes_dict.items():
             num_feature_dict[key2int[key]] = 128
         # 2 - target node features (id vec for others)
         elif args.feats_type == 2:
-            indices = np.vstack((np.arange(N), np.arange(N)))
-            indices = torch.LongTensor(indices)
-            values = torch.FloatTensor(np.ones(N))
-            x_dict[key2int[key]] = torch.sparse.FloatTensor(indices, values, torch.Size([N, N]))
-            num_feature_dict[key2int[key]] = N
-            
+            pass
+            # Using Node Embeding
+            #
+            # indices = np.vstack((np.arange(N), np.arange(N)))
+            # indices = torch.LongTensor(indices)
+            # values = torch.FloatTensor(np.ones(N))
+            # x_dict[key2int[key]] = torch.sparse.FloatTensor(indices, values, torch.Size([N, N])).to_dense()
+            # num_feature_dict[key2int[key]] = N
         # 3 - target node features (random features for others)
         elif args.feats_type == 3:
             x_dict[key2int[key]] = torch.Tensor(N, 128).uniform_(-0.5, 0.5)
@@ -170,15 +168,22 @@ train_loader = NeighborSampler(edge_index, node_idx=paper_train_idx,
 test_loader = NeighborSampler(edge_index, node_idx=paper_idx,
                                sizes=tr_size, batch_size=args.test_batch_size, shuffle=False,
                                num_workers=12)
-subgraph_loader = NeighborSampler(edge_index, node_idx=None,
+subgraph_loader = NeighborSampler(edge_index, node_idx=None, 
                                sizes=[-1], batch_size=args.test_batch_size, shuffle=False,
                                num_workers=12)
 
 class REGCNConv(MessagePassing):
-    def __init__(self, in_channels, out_channels, num_node_types,
-                 num_edge_types, scaling_factor=100., gcn=False, dropout=0., 
-                 use_softmax=False):
-        super(REGCNConv, self).__init__(aggr='add')
+    def __init__(self,
+                 in_channels,
+                 out_channels,
+                 num_node_types,
+                 num_edge_types,
+                 scaling_factor=100.,
+                 gcn=False,
+                 dropout=0., 
+                 use_softmax=False
+                ):
+        super(REGCNConv, self).__init__(aggr='mean')
 
         self.in_channels = in_channels
         self.out_channels = out_channels
@@ -200,6 +205,7 @@ class REGCNConv(MessagePassing):
 
     def reset_parameters(self):
         init.xavier_uniform_(self.weight)
+        init.xavier_uniform_(self.weight_root)
         init.zeros_(self.bias)
         init.constant_(self.relation_weight, 1.0 / self.scaling_factor)
 
@@ -220,7 +226,7 @@ class REGCNConv(MessagePassing):
         # Cal edge weight according to its relation type
         relation_weight = self.relation_weight * self.scaling_factor
         relation_weight = F.leaky_relu(relation_weight)
-        print(relation_weight)
+        # print(relation_weight)
         edge_weight = torch.matmul(e_feat, relation_weight)  # [E]
 
         # Compute GCN normalization
@@ -237,7 +243,7 @@ class REGCNConv(MessagePassing):
             ew = edge_weight * norm
         
         ew = F.dropout(ew, p=self.dropout, training=self.training)
-        out = self.propagate(edge_index, x=x, ew=ew)
+        out = self.propagate(edge_index, x=x, ew=edge_weight)
 
         if return_weights:
             return out, ew
@@ -274,21 +280,28 @@ class REGCN(torch.nn.Module):
         self.num_node_types = num_node_types
         self.num_edge_types = num_edge_types
 
-        # Feature Projection
-        self.lins = ModuleDict()
-        for key in set(node_types): 
-            self.lins[str(key)] = Linear(num_feature_dict[key], hidden_channels)
+        if args.feats_type == 2:
+            self.emb_dict = ParameterDict({
+                f'{key}': Parameter(torch.Tensor(num_nodes_dict[key], in_channels))
+                for key in set(node_types).difference(set([target_node_type]))
+            })
+            self.lin = Linear(in_channels, hidden_channels)
+        else:
+            # Feature Projection
+            self.lins = ModuleDict()
+            for key in set(node_types): 
+                self.lins[str(key)] = Linear(num_feature_dict[key], hidden_channels)
 
         # REGNNConv
         self.convs = ModuleList()
         self.convs.append(REGCNConv(hidden_channels, hidden_channels, num_node_types, num_edge_types, scaling_factor, gcn))
         for _ in range(num_layers - 2):
             self.convs.append(REGCNConv(hidden_channels, hidden_channels, num_node_types, num_edge_types, scaling_factor, gcn))
-        self.convs.append(REGCNConv(hidden_channels, out_channels, self.num_node_types, num_edge_types, scaling_factor, gcn))
+        self.convs.append(REGCNConv(hidden_channels, out_channels, num_node_types, num_edge_types, scaling_factor, gcn))
 
-        self.prelus = ModuleList()
-        for _ in range(num_layers-1):
-            self.prelus.append(torch.nn.PReLU())
+        # self.prelus = ModuleList()
+        # for _ in range(num_layers-1):
+        #     self.prelus.append(torch.nn.PReLU())
 
         self.bns = ModuleList()
         for _ in range(num_layers-1):
@@ -297,8 +310,15 @@ class REGCN(torch.nn.Module):
         self.reset_parameters()
 
     def reset_parameters(self):
-        for lin in self.lins.values():
-            lin.reset_parameters()
+        # for emb in self.emb_dict.values():
+        #     torch.nn.init.xavier_uniform_(emb)
+        if args.feats_type == 2:
+            for emb in self.emb_dict.values():
+                torch.nn.init.xavier_uniform_(emb)
+            self.lin.reset_parameters()
+        else:
+            for lin in self.lins.values():
+                lin.reset_parameters()
         for conv in self.convs:
             conv.reset_parameters()
         for bn in self.bns:
@@ -311,25 +331,32 @@ class REGCN(torch.nn.Module):
             node_type = node_type[n_id]
             local_node_idx = local_node_idx[n_id]
         
-        if device is None:
-            device = node_type.device
-
-        h = torch.zeros((node_type.size(0), self.hidden_channels),
-                        device=device)
-
-        for key, x in x_dict.items():
-            mask = node_type == key
-            # It will make the training or inference speed slower.
-            x_tmp = x[local_node_idx[mask]].to(node_type.device)
-            h_tmp = self.lins[str(key)](x_tmp)
-            h[mask] = h_tmp.to(device)
+        if args.feats_type == 2:
+            t = torch.zeros((node_type.size(0), self.in_channels),
+                            device=device)
+            for key, x in x_dict.items():
+                mask = node_type == key
+                t[mask] = x[local_node_idx[mask]].to(device)
+            for key, emb in self.emb_dict.items():
+                mask = node_type == int(key)
+                t[mask] = emb[local_node_idx[mask]].to(device)
+            h = self.lin(t.to(node_type.device)).to(device)
+        else:
+            h = torch.zeros((node_type.size(0), self.hidden_channels),
+                            device=device)
+            for key, x in x_dict.items():
+                mask = node_type == key
+                # It will make the training or inference speed slower.
+                x_tmp = x[local_node_idx[mask]].to(node_type.device)
+                h_tmp = self.lins[str(key)](x_tmp)
+                h[mask] = h_tmp.to(device)
 
         return h
 
     def forward(self, n_id, x_dict, adjs, edge_type, node_type,
                 local_node_idx):
 
-        x = self.group_input(x_dict, node_type, local_node_idx, n_id)
+        x = self.group_input(x_dict, node_type, local_node_idx, n_id, node_type.device)
         node_type = node_type[n_id]
 
         for i, (edge_index, e_id, size) in enumerate(adjs):
@@ -342,7 +369,7 @@ class REGCN(torch.nn.Module):
                     x = x + x_target
                 if self.use_bn:
                     x = self.bns[i](x)
-                x = self.prelus[i](x)
+                x = F.relu(x)
                 x = F.dropout(x, p=self.dropout, training=self.training)
 
         return x.log_softmax(dim=-1)
@@ -357,7 +384,6 @@ class REGCN(torch.nn.Module):
 
             for batch_size, n_id, adj in subgraph_loader:
                 edge_index, e_id, size = adj.to(device)
-                # print(n_id[:size[1]])
                 x = x_all[n_id].to(device)
                 x_target = x[:size[1]]
                 x = self.convs[layer]((x, x_target), edge_index, edge_type[e_id])
@@ -366,7 +392,7 @@ class REGCN(torch.nn.Module):
                         x = x + x_target
                     if self.use_bn:
                         x = self.bns[layer](x)
-                    x = self.prelus[layer](x)
+                    x = F.relu(x)
                 xs.append(x.cpu())
                 pbar.update(batch_size)
 
@@ -484,7 +510,7 @@ def test_tmp():
     return train_acc, valid_acc, test_acc
 
 time_used = []
-# test()  # Test if inference on GPU succeeds.
+test()  # Test if inference on GPU succeeds.
 for run in range(args.runs):
     st = time.perf_counter()
     model.reset_parameters()
@@ -500,14 +526,6 @@ for run in range(args.runs):
               f'Train: {100 * train_acc:.2f}%, '
               f'Valid: {100 * valid_acc:.2f}%, '
               f'Test: {100 * test_acc:.2f}%')
-        # result = test_tmp()
-        # train_acc, valid_acc, test_acc = result
-        # print(f'Run: {run + 1:02d}, '
-        #       f'Epoch: {epoch:02d}, '
-        #       f'Loss: {loss:.4f}, '
-        #       f'Train: {100 * train_acc:.2f}%, '
-        #       f'Valid: {100 * valid_acc:.2f}%, '
-        #       f'Test: {100 * test_acc:.2f}%')
     time_used.append(time.perf_counter()-st)
     logger.print_statistics(run)
 logger.print_statistics()
