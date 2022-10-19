@@ -13,7 +13,7 @@ weight_decay_lst=(0. 0.0005 0.001 0.005)
 
 dropout_lst=(0.2 0.5 0.7)
 
-R_list=(100.)
+R_list=(10. 100.)
 
 for n_layer in "${n_layers_lst[@]}"; do
 	for head in "${heads_lst[@]}"; do
