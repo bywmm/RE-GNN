@@ -2,6 +2,8 @@ from copy import copy
 import argparse
 from tqdm import tqdm
 import time
+import random
+import numpy as np
 
 import torch
 import torch.nn.functional as F
@@ -16,7 +18,19 @@ from ogb.nodeproppred import PygNodePropPredDataset, Evaluator
 
 from logger import Logger
 
-parser = argparse.ArgumentParser(description='OGBN-MAG (SAGE)')
+
+def set_seed(seed):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        print('Using CUDA')
+        torch.cuda.manual_seed(seed)
+
+set_seed(123)
+
+
+parser = argparse.ArgumentParser(description='OGBN-MAG (RGCN-NS)')
 parser.add_argument('--device', type=int, default=0)
 parser.add_argument('--num_layers', type=int, default=2)
 parser.add_argument('--hidden_channels', type=int, default=64)
@@ -26,6 +40,10 @@ parser.add_argument('--epochs', type=int, default=3)
 parser.add_argument('--runs', type=int, default=10)
 parser.add_argument('--train_batch_size', type=int, default=1024)
 parser.add_argument('--test_batch_size', type=int, default=2048)
+parser.add_argument('--regcn_like', action='store_true')
+parser.add_argument('--scaling_factor', type=int, default=100.)
+parser.add_argument('--gcn_like', action='store_true')
+parser.add_argument('--subgraph_test', action='store_true')
 args = parser.parse_args()
 print(args)
 
@@ -91,27 +109,40 @@ train_loader = NeighborSampler(edge_index, node_idx=paper_train_idx,
 test_loader = NeighborSampler(edge_index, node_idx=paper_idx,
                                sizes=[25, 20], batch_size=args.test_batch_size, shuffle=False,
                                num_workers=12)
+subgraph_loader = NeighborSampler(edge_index, node_idx=None,
+                               sizes=[-1], batch_size=args.test_batch_size, shuffle=False,
+                               num_workers=12)
 
 class RGCNConv(MessagePassing):
-    def __init__(self, in_channels, out_channels, num_node_types,
-                 num_edge_types):
+    def __init__(self,
+                 in_channels,
+                 out_channels,
+                 num_node_types,
+                 num_edge_types
+                ):
         super(RGCNConv, self).__init__(aggr='mean')
 
         self.in_channels = in_channels
         self.out_channels = out_channels
         self.num_node_types = num_node_types
         self.num_edge_types = num_edge_types
+        self.regcn_like = args.regcn_like
+        self.gcn_like = args.gcn_like
 
-        self.rel_lins = ModuleList([
-            Linear(in_channels, out_channels, bias=False)
-            for _ in range(num_edge_types)
-        ])
-
-        self.root_lins = ModuleList([
-            Linear(in_channels, out_channels, bias=True)
-            for _ in range(num_node_types)
-        ])
-
+        if self.regcn_like or self.gcn_like:
+            self.rel_lins = ModuleList([Linear(in_channels, out_channels, bias=False)])
+            self.root_lins = ModuleList([Linear(in_channels, out_channels, bias=True)])
+            self.relation_weight = Parameter(torch.Tensor(num_edge_types+num_node_types), requires_grad=True if self.regcn_like else False)
+            self.scaling_factor = args.scaling_factor
+        else:
+            self.rel_lins = ModuleList([
+                Linear(in_channels, out_channels, bias=False)
+                for _ in range(num_edge_types)
+            ])
+            self.root_lins = ModuleList([
+                Linear(in_channels, out_channels, bias=True)
+                for _ in range(num_node_types)
+            ])
         self.reset_parameters()
 
     def reset_parameters(self):
@@ -119,9 +150,15 @@ class RGCNConv(MessagePassing):
             lin.reset_parameters()
         for lin in self.root_lins:
             lin.reset_parameters()
+        if self.regcn_like or self.gcn_like:
+            torch.nn.init.constant_(self.relation_weight, 1.0 / self.scaling_factor)
 
     def forward(self, x, edge_index, edge_type, target_node_type):
         x_src, x_target = x
+
+        if self.regcn_like or self.gcn_like:
+            relation_weight = self.relation_weight * self.scaling_factor
+            relation_weight = F.leaky_relu(relation_weight)
 
         out = x_target.new_zeros(x_target.size(0), self.out_channels)
 
@@ -131,13 +168,19 @@ class RGCNConv(MessagePassing):
 
         for i in range(self.num_node_types):
             mask = target_node_type == i
-            out[mask] += self.root_lins[i](x_target[mask])
-
+            if self.regcn_like or self.gcn_like:
+                out[mask] += relation_weight[i] * self.root_lins[0](x_target[mask])
+            else:
+                out[mask] += self.root_lins[i](x_target[mask])
         return out
 
     def message(self, x_j, edge_type: int):
-        return self.rel_lins[edge_type](x_j)
-
+        if self.regcn_like or self.gcn_like:
+            relation_weight = self.relation_weight * self.scaling_factor
+            relation_weight = F.leaky_relu(relation_weight)
+            return self.rel_lins[0](x_j) * relation_weight[edge_type + self.num_node_types]
+        else:
+            return self.rel_lins[edge_type](x_j)
 
 class RGCN(torch.nn.Module):
     def __init__(self, in_channels, hidden_channels, out_channels, num_layers,
@@ -149,6 +192,9 @@ class RGCN(torch.nn.Module):
         self.out_channels = out_channels
         self.num_layers = num_layers
         self.dropout = dropout
+
+        self.regcn_like = args.regcn_like
+        self.gcn_like = args.gcn_like
 
         node_types = list(num_nodes_dict.keys())
         num_node_types = len(node_types)
@@ -179,29 +225,29 @@ class RGCN(torch.nn.Module):
         for conv in self.convs:
             conv.reset_parameters()
 
-    def group_input(self, x_dict, node_type, local_node_idx, n_id=None):
+    def group_input(self, x_dict, node_type, local_node_idx, n_id=None, device=None):
         # Create global node feature matrix.
         if n_id is not None:
             node_type = node_type[n_id]
             local_node_idx = local_node_idx[n_id]
 
         h = torch.zeros((node_type.size(0), self.in_channels),
-                        device=node_type.device)
+                        device=device)
 
         for key, x in x_dict.items():
             mask = node_type == key
-            h[mask] = x[local_node_idx[mask]]
+            h[mask] = x[local_node_idx[mask]].to(device)
 
         for key, emb in self.emb_dict.items():
             mask = node_type == int(key)
-            h[mask] = emb[local_node_idx[mask]]
+            h[mask] = emb[local_node_idx[mask]].to(device)
 
         return h
 
     def forward(self, n_id, x_dict, adjs, edge_type, node_type,
                 local_node_idx):
 
-        x = self.group_input(x_dict, node_type, local_node_idx, n_id)
+        x = self.group_input(x_dict, node_type, local_node_idx, n_id, node_type.device)
         node_type = node_type[n_id]
 
         for i, (edge_index, e_id, size) in enumerate(adjs):
@@ -215,23 +261,18 @@ class RGCN(torch.nn.Module):
 
         return x.log_softmax(dim=-1)
 
-    def inference(self, x_dict, test_loader, edge_type, node_type, local_node_idx):
-        for i in range(self.num_layers):
+    def inference(self, x_dict, subgraph_loader, edge_type, node_type, local_node_idx, device):
+        x_all = self.group_input(x_dict, node_type, local_node_idx, device=torch.device('cpu'))
+        for layer in range(self.num_layers):
             xs = []
-            # node_consumption = 0
-            for batch_size, n_id, adj in test_loader:
-                if i == 0:
-                    x = self.group_input(x_dict, node_type, local_node_idx, n_id)
-                else:
-                    # x = x_all[node_consumption:node_consumption+batch_size].to(node_type.device)
-                    # node_consumption += batch_size
-                    x = x_all[n_id].to(node_type.device)
+            for batch_size, n_id, adj in subgraph_loader:
+                edge_index, e_id, size = adj.to(device)
+                x = x_all[n_id].to(device)
                 node_type_src = node_type[n_id]
-                edge_index, e_id, size = adj[i].to(node_type.device)
                 node_type_target = node_type_src[:size[1]]
                 x_target = x[:size[1]]
-                x = self.convs[i]((x, x_target), edge_index, edge_type[e_id], node_type_target)
-                if i != self.num_layers - 1:
+                x = self.convs[layer]((x, x_target), edge_index, edge_type[e_id], node_type_target)
+                if layer != self.num_layers - 1:
                     x = F.relu(x)
                 xs.append(x.cpu())
 
@@ -254,15 +295,28 @@ class RGCN(torch.nn.Module):
 
         for i, conv in enumerate(self.convs):
             out_dict = {}
+            if self.regcn_like or self.gcn_like:
+                relation_weight = conv.relation_weight * conv.scaling_factor
+                relation_weight = F.leaky_relu(relation_weight)
+                print(f"Layer {i}, Relation weight {relation_weight}")
 
             for j, x in x_dict.items():
-                out_dict[j] = conv.root_lins[j](x)
+                if self.regcn_like or self.gcn_like:
+                    out_dict[j] = conv.root_lins[0](x)
+                    out_dict[j] *= relation_weight[j]
+                else:
+                    out_dict[j] = conv.root_lins[j](x)
 
             for keys, adj_t in adj_t_dict.items():
                 src_key, target_key = keys[0], keys[-1]
                 out = out_dict[key2int[target_key]]
                 tmp = adj_t.matmul(x_dict[key2int[src_key]], reduce='mean')
-                out.add_(conv.rel_lins[key2int[keys]](tmp))
+                if self.regcn_like or self.gcn_like:
+                    tmp = conv.rel_lins[0](tmp)
+                    tmp *= relation_weight[key2int[keys] + conv.num_node_types]
+                    out.add_(tmp)
+                else:
+                    out.add_(conv.rel_lins[key2int[keys]](tmp))
 
             if i != self.num_layers - 1:
                 for j in range(self.num_node_types):
@@ -324,37 +378,39 @@ def train(epoch, optimizer):
 def test():
     model.eval()
 
-    full_batch_flag = False
-    if full_batch_flag:
+    # full batch test
+    if not args.subgraph_test:
         out = model.inference_full_batch(x_dict, edge_index_dict, key2int)
         out = out[key2int['paper']]
         y_pred = out.argmax(dim=-1, keepdim=True).cpu() # [736389, 1]
         y_true = data.y_dict['paper'] # [736389, 1]
     else:
-        pbar = tqdm(total=paper_idx.size(0))
-        pbar.set_description(f'Test')
 
-        y_pred = []
-        y_true = []
-        for batch_size, n_id, adjs in test_loader:
-            n_id = n_id.to(device)
-            adjs = [adj.to(device) for adj in adjs]
-            out = model(n_id, x_dict, adjs, edge_type, node_type, local_node_idx)
-            y_t = y_global[n_id][:batch_size]
-            y_p = out.argmax(dim=-1, keepdim=True).cpu()
-            # print(y_t.shape)
-            # print(y_p.shape)
-            # print("=====")
-            y_pred.append(y_p)
-            y_true.append(y_t)
-            pbar.update(batch_size)
+        out = model.inference(x_dict, subgraph_loader, edge_type, node_type, local_node_idx, device=device)
+        y_pred = out.argmax(-1, keepdim=True)[local2global['paper']]
+        y_true = y_global[local2global['paper']]
+        # pbar = tqdm(total=paper_idx.size(0))
+        # pbar.set_description(f'Test')
 
-        pbar.close()
-    
-        y_pred = torch.cat(y_pred, dim=0)
-        y_true = torch.cat(y_true, dim=0)
+        # y_pred = []
+        # y_true = []
+        # for batch_size, n_id, adjs in test_loader:
+        #     n_id = n_id.to(device)
+        #     adjs = [adj.to(device) for adj in adjs]
+        #     out = model(n_id, x_dict, adjs, edge_type, node_type, local_node_idx)
+        #     y_t = y_global[n_id][:batch_size]
+        #     y_p = out.argmax(dim=-1, keepdim=True).cpu()
+        #     # print(y_t.shape)
+        #     # print(y_p.shape)
+        #     # print("=====")
+        #     y_pred.append(y_p)
+        #     y_true.append(y_t)
+        #     pbar.update(batch_size)
 
-    # out = model.inference(x_dict, test_loader, edge_type, node_type, local_node_idx)
+        # pbar.close()
+
+        # y_pred = torch.cat(y_pred, dim=0)
+        # y_true = torch.cat(y_true, dim=0)
 
     train_acc = evaluator.eval({
         'y_true': y_true[split_idx['train']['paper']],

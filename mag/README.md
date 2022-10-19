@@ -30,12 +30,37 @@ python graph_saint.py
 | RGCN          | OOM           |               |               | 154,366,772   |                   |
 | RGCN-Saint    | 47.73 ± 0.36  | 337.103s      | 30            | 154,366,772   | SAINT-train only  |
 | RGCN_SAGE     | 45.11 ± 0.44  | 214.7822s     | 3             | 154,366,772   | SAGE_train & test |
+| RGCN_SAGE     | 46.75 ± 0.57  |               |               |               | SAGE_train only   |
 | REGNN_dev     | 41.22 ± 0.30  | 167.5164s     | 3             | 154,151,923   | a=1               |
 | REGNN_dev     | 40.83 ± 0.55  | 162.1781s     | 3             | 154,151,923   | a=10              |
 | REGNN-S       | 36.89 ± 4.70  | 164.8299s     | 3             | 154,151,923   | softmax           |
 | REGNN-3       | 42.90         | 37674.5703s   | 500           |               | bn                |
 | REGNN-4       | 44.69         | 37874.0664s   | 500           |               | bn                |
-| REGNN-3-res   | 45.75 ± 0.36  | 8105.6509s    | 100           |               | bn-2layer         |
+| REGNN-3-res   | 46.24 ± 0.35  | 14505.1260s   | 100           |               | bn-2layer         |
 | REGNN-3-res   | -             |-              | 100           |               | bn-3layer-bs256   |
 | REGNN-3-res   | Test-OOM      |               |               |               | bn-4layer-bs32    |
 | REGNN-3-res   | 46.90 ± 0.30  | 17022.2910s   | 100           |               | bn-subgraph_test  |
+| GNN-3-res     | 46.90 ± 0.38  | 16743.1699s   | 100           |               | bn-subgraph_test  |
+| REGNN-3-res   | 47.28 ± 0.17  | 18156.0625s   | 100           |               | R=10              |
+| REGNN-3-res   | 46.95 ± 0.34  | 18434.7578s   | 100           |               | R=100             |
+| REGNN-3-res   | mag-2 gpu7    | 18434.7578s   | 100           |               | R=10  (对照)      |
+| REGNN-4-res   | mag-1 gpu9    | 18434.7578s   | 100           |               | R=10             |
+| REGNN-3-res   | mag gpu8      | 18434.7578s   | 100           |               | R=10 L=3 (256,256)         |
+| REGNN-3-res   | mag-3 gpu5    | 18434.7578s   | 100           |               | R=10 L=4 H=256 (64,64)         |
+| REGNN-SAINT   | mag-2
+| REGNN-SAINT   | layer 3-4-5-6
+| REGNN         | 初始化
+
+### rgcn_ns的修改报告
+- rgcn：46.64 ± 0.39
+- 去掉不同的非线性，使用relation weight（R=100）：46.34 ± 0.73
+- 去掉不同的非线性，使用relation weight（R=10）：46.85 ± 0.80
+- 去掉不同的非线性，使用relation weight（R=1）：46.65 ± 0.67
+- 去掉不同的非线性：45.97 ± 0.95
+
+不用它的full batch test，使用NS的subgraph_test，速度会慢点
+- rgcn：46.89 ± 0.62
+- 去掉不同的非线性，使用relation weight（R=100）：46.90 ± 0.49
+- 去掉不同的非线性，使用relation weight（R=10）：47.04 ± 0.46
+- 去掉不同的非线性，使用relation weight（R=1）：46.87 ± 0.42
+- 去掉不同的非线性： 46.06 ± 0.47
