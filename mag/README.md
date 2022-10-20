@@ -64,3 +64,8 @@ python graph_saint.py
 - 去掉不同的非线性，使用relation weight（R=10）：47.04 ± 0.46
 - 去掉不同的非线性，使用relation weight（R=1）：46.87 ± 0.42
 - 去掉不同的非线性： 46.06 ± 0.47
+
+
+### regcn_ns 两种self loop实现的区别
+- 加self-loop边，正常采样：
+- 采样节点，加self-loop：

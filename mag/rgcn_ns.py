@@ -41,7 +41,7 @@ parser.add_argument('--runs', type=int, default=10)
 parser.add_argument('--train_batch_size', type=int, default=1024)
 parser.add_argument('--test_batch_size', type=int, default=2048)
 parser.add_argument('--regcn_like', action='store_true')
-parser.add_argument('--scaling_factor', type=int, default=100.)
+parser.add_argument('--scaling_factor', type=float, default=100.)
 parser.add_argument('--gcn_like', action='store_true')
 parser.add_argument('--subgraph_test', action='store_true')
 args = parser.parse_args()
@@ -215,7 +215,7 @@ class RGCN(torch.nn.Module):
         self.convs.append(RGCNConv(I, H, num_node_types, num_edge_types))
         for _ in range(num_layers - 2):
             self.convs.append(RGCNConv(H, H, num_node_types, num_edge_types))
-        self.convs.append(RGCNConv(H, O, self.num_node_types, num_edge_types))
+        self.convs.append(RGCNConv(H, O, num_node_types, num_edge_types))
 
         self.reset_parameters()
 
@@ -237,15 +237,13 @@ class RGCN(torch.nn.Module):
         for key, x in x_dict.items():
             mask = node_type == key
             h[mask] = x[local_node_idx[mask]].to(device)
-
         for key, emb in self.emb_dict.items():
             mask = node_type == int(key)
             h[mask] = emb[local_node_idx[mask]].to(device)
 
         return h
 
-    def forward(self, n_id, x_dict, adjs, edge_type, node_type,
-                local_node_idx):
+    def forward(self, n_id, x_dict, adjs, edge_type, node_type, local_node_idx):
 
         x = self.group_input(x_dict, node_type, local_node_idx, n_id, node_type.device)
         node_type = node_type[n_id]
@@ -385,7 +383,6 @@ def test():
         y_pred = out.argmax(dim=-1, keepdim=True).cpu() # [736389, 1]
         y_true = data.y_dict['paper'] # [736389, 1]
     else:
-
         out = model.inference(x_dict, subgraph_loader, edge_type, node_type, local_node_idx, device=device)
         y_pred = out.argmax(-1, keepdim=True)[local2global['paper']]
         y_true = y_global[local2global['paper']]
