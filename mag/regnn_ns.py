@@ -38,6 +38,7 @@ parser.add_argument('--num_layers', type=int, default=2)
 parser.add_argument('--hidden_channels', type=int, default=128)
 parser.add_argument('--dropout', type=float, default=0.5)
 parser.add_argument('--lr', type=float, default=0.01)
+parser.add_argument('--weight_decay', type=float, default=0.)
 parser.add_argument('--epochs', type=int, default=3)
 parser.add_argument('--runs', type=int, default=10)
 parser.add_argument('--train_batch_size', type=int, default=1024)
@@ -209,7 +210,7 @@ class REGCNConv(MessagePassing):
         self.dropout = dropout
 
         self.weight = Parameter(torch.Tensor(in_channels, out_channels))
-        self.weight_root = Parameter(torch.Tensor(in_channels, out_channels))
+        # self.weight_root = Parameter(torch.Tensor(in_channels, out_channels))
         self.bias = Parameter(torch.Tensor(out_channels))
         if args.self_loop_type in [1, 3]:
             rw_dim = self.num_edge_types
@@ -225,7 +226,7 @@ class REGCNConv(MessagePassing):
 
     def reset_parameters(self):
         init.xavier_uniform_(self.weight)
-        init.xavier_uniform_(self.weight_root)
+        # init.xavier_uniform_(self.weight_root)
         init.zeros_(self.bias)
         init.constant_(self.relation_weight, 1.0 / self.scaling_factor)
 
@@ -272,12 +273,12 @@ class REGCNConv(MessagePassing):
             deg = weighted_degree(col, edge_weight, x_target.size(0), dtype=x_target.dtype) #.abs()
             deg_inv = deg.pow(-1.0)
             norm = deg_inv[col]
-            ew = edge_weight * norm
+            ew = edge_weight * norm 
         
-        # ew = F.dropout(ew, p=self.dropout, training=self.training)
+        ew = F.dropout(ew, p=self.dropout, training=self.training)
         out = self.propagate(edge_index, x=x, ew=ew)
 
-        out += x_target
+        # out += x_target
 
         if return_weights:
             return out, ew
@@ -344,8 +345,6 @@ class REGCN(torch.nn.Module):
         self.reset_parameters()
 
     def reset_parameters(self):
-        # for emb in self.emb_dict.values():
-        #     torch.nn.init.xavier_uniform_(emb)
         if args.feats_type == 2:
             for emb in self.emb_dict.values():
                 torch.nn.init.xavier_uniform_(emb)
@@ -386,8 +385,7 @@ class REGCN(torch.nn.Module):
 
         return h
 
-    def forward(self, n_id, x_dict, adjs, edge_type, node_type,
-                local_node_idx):
+    def forward(self, n_id, x_dict, adjs, edge_type, node_type, local_node_idx):
 
         x = self.group_input(x_dict, node_type, local_node_idx, n_id, node_type.device)
         node_type = node_type[n_id]
@@ -415,8 +413,9 @@ class REGCN(torch.nn.Module):
                 edge_index, e_id, size = adj.to(device)
                 x = x_all[n_id].to(device)
                 x_target = x[:size[1]]
-                target_node_type = node_type[n_id][:size[1]]
-                x = self.convs[layer]((x, x_target), edge_index, edge_type[e_id], target_node_type)
+                node_type_src = node_type[n_id]
+                node_type_target = node_type_src[:size[1]]
+                x = self.convs[layer]((x, x_target), edge_index, edge_type[e_id], node_type_target)
                 if layer != self.num_layers - 1:
                     if self.residual:
                         x = x + x_target
@@ -437,6 +436,7 @@ model = REGCN(128, args.hidden_channels, dataset.num_classes, args.num_layers, a
 
 # sum_p = sum(p.numel() for p in model.parameters())
 # print(sum_p)
+# assert False
 
 # Create global label vector.
 y_global = node_type.new_full((node_type.size(0), 1), -1)
@@ -542,7 +542,7 @@ time_used = []
 for run in range(args.runs):
     st = time.perf_counter()
     model.reset_parameters()
-    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     for epoch in range(1, 1 + args.epochs):
         loss = train(epoch, optimizer)
         result = test()

@@ -69,3 +69,51 @@ python graph_saint.py
 ### regcn_ns 两种self loop实现的区别
 - 加self-loop边，正常采样：
 - 采样节点，加self-loop：
+
+
+### regcn_ns feats_type 3
+
+```
+# 45.86
+python regnn_ns.py --device 6 --runs 1 --epoch 100 --residual --use_bn --train_batch_size 512 --test_batch_size 512 --lr 0.001
+
+# 45.53
+python regnn_ns.py --device 5 --runs 1 --epoch 100 --residual --use_bn --train_batch_size 512 --test_batch_size 512 --lr 0.001 --feats_type 4
+
+# 46.93
+python regnn_ns.py --device 7 --runs 1 --epoch 100 --residual --use_bn --train_batch_size 512 --test_batch_size 512 --lr 0.001 --hidden 256
+
+# Highest Train: 63.24; Highest Valid: 48.07; Final Train: 59.95; Final Test: 47.17
+python regnn_ns.py --device 7 --runs 1 --epoch 100 --residual --use_bn --train_batch_size 512 --test_batch_size 512 --lr 0.001 --hidden 512
+
+# 30 epoch 42.98%
+python regnn_ns.py --device 8 --runs 1 --epoch 100 --residual --use_bn --num_layers 3 --train_batch_size 256 --test_batch_size 256 --lr 0.001 --hidden 256
+
+# Epoch: 53, Loss: 2.1528, Train: 43.50%, Valid: 41.59%, Test: 41.58% (收敛太慢)
+python regnn_ns.py --device 7 --runs 1 --epoch 100 --residual --use_bn --train_batch_size 512 --test_batch_size 512 --lr 0.001 --hidden 512
+
+# 
+python regnn_ns.py --device 8 --runs 1 --epoch 100 --use_bn --residual --train_batch_size 1024 --test_batch_size 512 --lr 0.001 --hidden 1024
+
+```
+
+拿256做实验
+```
+# lr 0.005
+# Highest Train: 54.55; Highest Valid: 47.50; Final Train: 53.68; Final Test: 46.34
+python regnn_ns.py --device 7 --runs 1 --epoch 100 --residual --use_bn --train_batch_size 512 --test_batch_size 512 --lr 0.005 --hidden 256
+
+# - bn
+# Highest Train: 55.51; Highest Valid: 47.48; Final Train: 55.19; Final Test: 46.66
+python regnn_ns.py --device 7 --runs 1 --epoch 100 --residual --train_batch_size 512 --test_batch_size 512 --lr 0.001 --hidden 256\
+
+# += x_target, - residual
+# Highest Train: 58.30; Highest Valid: 47.84; Final Train: 57.84; Final Test: 46.80
+python regnn_ns.py --device 7 --runs 1 --epoch 100 --residual --train_batch_size 512 --test_batch_size 512 --lr 0.001 --hidden 256
+
+# R=10 Highest Train: 55.47; Highest Valid: 46.88; Final Train: 54.72; Final Test: 46.53
+python regnn_ns.py --device 9 --runs 1 --epoch 100 --use_bn --residual --train_batch_size 1024 --test_batch_size 512 --lr 0.001 --hidden 256 --scaling_factor 10
+# R=1
+python regnn_ns.py --device 8 --runs 1 --epoch 100 --use_bn --residual --train_batch_size 1024 --test_batch_size 512 --lr 0.001 --hidden 256 --scaling_factor 1
+```
+
