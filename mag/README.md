@@ -117,3 +117,16 @@ python regnn_ns.py --device 9 --runs 1 --epoch 100 --use_bn --residual --train_b
 python regnn_ns.py --device 8 --runs 1 --epoch 100 --use_bn --residual --train_batch_size 1024 --test_batch_size 512 --lr 0.001 --hidden 256 --scaling_factor 1
 ```
 
+修改：REGCN+2层FC
+```
+# 
+python regnn_ns.py --device 9 --runs 1 --epoch 100 --use_bn --residual --train_batch_size 1024 --test_batch_size 512 --lr 0.001 --hidden 256
+# 1个FC
+# Highest Train: 53.44 ± nan
+Highest Valid: 47.94 ± nan
+  Final Train: 52.96 ± nan
+   Final Test: 46.98 ± nan
+time used: tensor(29158.7090) tensor(nan)
+python regnn_ns.py --device 7 --runs 1 --epoch 200 --use_bn --residual --train_batch_size 1024 --test_batch_size 512 --lr 0.001 --hidden 256
+
+```

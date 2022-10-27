@@ -330,16 +330,18 @@ class REGCN(torch.nn.Module):
         # REGNNConv
         self.convs = ModuleList()
         self.convs.append(REGCNConv(hidden_channels, hidden_channels, num_node_types, num_edge_types, scaling_factor, gcn))
-        for _ in range(num_layers - 2):
+        for _ in range(num_layers - 1):
             self.convs.append(REGCNConv(hidden_channels, hidden_channels, num_node_types, num_edge_types, scaling_factor, gcn))
-        self.convs.append(REGCNConv(hidden_channels, out_channels, num_node_types, num_edge_types, scaling_factor, gcn))
+        # self.convs.append(REGCNConv(hidden_channels, out_channels, num_node_types, num_edge_types, scaling_factor, gcn))
+        self.out_lin1 = Linear(hidden_channels, hidden_channels)
+        self.out_lin2 = Linear(hidden_channels, out_channels)
 
         # self.prelus = ModuleList()
         # for _ in range(num_layers-1):
         #     self.prelus.append(torch.nn.PReLU())
 
         self.bns = ModuleList()
-        for _ in range(num_layers-1):
+        for _ in range(num_layers):
             self.bns.append(torch.nn.BatchNorm1d(self.hidden_channels))
 
         self.reset_parameters()
@@ -356,6 +358,8 @@ class REGCN(torch.nn.Module):
             conv.reset_parameters()
         for bn in self.bns:
             bn.reset_parameters()
+        self.out_lin1.reset_parameters()
+        self.out_lin2.reset_parameters()
 
     def group_input(self, x_dict, node_type, local_node_idx, n_id=None, device=None):
         # Create global node feature matrix.
@@ -395,13 +399,19 @@ class REGCN(torch.nn.Module):
             node_type = node_type[:size[1]]  # Target node types.
             conv = self.convs[i]
             x = conv((x, x_target), edge_index, edge_type[e_id], node_type)
-            if i != self.num_layers - 1:
+            if i != self.num_layers : # - 1:
                 if self.residual:
                     x = x + x_target
                 if self.use_bn:
                     x = self.bns[i](x)
                 x = F.relu(x)
                 x = F.dropout(x, p=self.dropout, training=self.training)
+        x1 = self.out_lin1(x)        
+        if self.residual:
+            x1 += x
+        x = F.relu(x1)
+        x = F.dropout(x, p=self.dropout, training=self.training)
+        x = self.out_lin2(x)        
 
         return x.log_softmax(dim=-1)
         
@@ -416,7 +426,7 @@ class REGCN(torch.nn.Module):
                 node_type_src = node_type[n_id]
                 node_type_target = node_type_src[:size[1]]
                 x = self.convs[layer]((x, x_target), edge_index, edge_type[e_id], node_type_target)
-                if layer != self.num_layers - 1:
+                if layer != self.num_layers:
                     if self.residual:
                         x = x + x_target
                     if self.use_bn:
@@ -425,8 +435,14 @@ class REGCN(torch.nn.Module):
                 xs.append(x.cpu())
 
             x_all = torch.cat(xs, dim=0)
+        x = x_all.to(device)
+        x1 = self.out_lin1(x)    
+        if self.residual:
+            x1 += x    
+        x = F.relu(x1)
+        x = self.out_lin2(x) 
 
-        return x_all
+        return x
 
 
 device = f'cuda:{args.device}' if torch.cuda.is_available() else 'cpu'
