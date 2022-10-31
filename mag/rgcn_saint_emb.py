@@ -1,7 +1,8 @@
+# Metapath2vec embedding + rgcn_saint
+# https://github.com/ytchx1999/PyG-ogbn-mag/blob/main/saint%2Bmetapath2vec/rgcn_saint.py
 from copy import copy
 import argparse
 from tqdm import tqdm
-import time
 
 import torch
 import torch.nn.functional as F
@@ -19,15 +20,15 @@ from logger import Logger
 parser = argparse.ArgumentParser(description='OGBN-MAG (GraphSAINT)')
 parser.add_argument('--device', type=int, default=0)
 parser.add_argument('--num_layers', type=int, default=2)
-parser.add_argument('--hidden_channels', type=int, default=64)
+parser.add_argument('--hidden_channels', type=int, default=256)
 parser.add_argument('--dropout', type=float, default=0.5)
 parser.add_argument('--lr', type=float, default=0.005)
 parser.add_argument('--epochs', type=int, default=30)
 parser.add_argument('--runs', type=int, default=10)
-parser.add_argument('--batch_size', type=int, default=20000)
-parser.add_argument('--test_batch_size', type=int, default=1024)
+parser.add_argument('--batch_size', type=int, default=10000)
 parser.add_argument('--walk_length', type=int, default=2)
 parser.add_argument('--num_steps', type=int, default=30)
+parser.add_argument('--test_batch_size', type=int, default=1024)
 parser.add_argument('--subgraph_test', action='store_true')
 args = parser.parse_args()
 print(args)
@@ -92,9 +93,11 @@ train_loader = GraphSAINTRandomWalkSampler(homo_data,
                                            num_steps=args.num_steps,
                                            sample_coverage=0,
                                            save_dir=dataset.processed_dir)
+
 subgraph_loader = NeighborSampler(edge_index, node_idx=None,
                                sizes=[-1], batch_size=args.test_batch_size, shuffle=False,
                                num_workers=12)
+
 # Map informations to their canonical type.
 x_dict = {}
 for key, x in data.x_dict.items():
@@ -139,7 +142,6 @@ class RGCNConv(MessagePassing):
         x_src, x_target = x
 
         out = x_target.new_zeros(x_target.size(0), self.out_channels)
-        # out = x.new_zeros(x.size(0), self.out_channels)
 
         for i in range(self.num_edge_types):
             mask = edge_type == i
@@ -195,21 +197,6 @@ class RGCN(torch.nn.Module):
         for conv in self.convs:
             conv.reset_parameters()
 
-    # def group_input(self, x_dict, node_type, local_node_idx):
-    #     # Create global node feature matrix.
-    #     h = torch.zeros((node_type.size(0), self.in_channels),
-    #                     device=node_type.device)
-
-    #     for key, x in x_dict.items():
-    #         mask = node_type == key
-    #         h[mask] = x[local_node_idx[mask]]
-
-    #     for key, emb in self.emb_dict.items():
-    #         mask = node_type == int(key)
-    #         h[mask] = emb[local_node_idx[mask]]
-
-    #     return h
-    
     def group_input(self, x_dict, node_type, local_node_idx, n_id=None, device=None):
         # Create global node feature matrix.
         if n_id is not None:
@@ -273,7 +260,7 @@ class RGCN(torch.nn.Module):
             x_dict = out_dict
 
         return x_dict
-    
+
     def neighborsampling_inference(self, x_dict, subgraph_loader, edge_type, node_type, local_node_idx, device):
         x_all = self.group_input(x_dict, node_type, local_node_idx, device=torch.device('cpu'))
         for layer in range(self.num_layers):
@@ -294,14 +281,19 @@ class RGCN(torch.nn.Module):
         return x_all
 
 
+
 device = f'cuda:{args.device}' if torch.cuda.is_available() else 'cpu'
 
-model = RGCN(128, args.hidden_channels, dataset.num_classes, args.num_layers,
+model = RGCN(256, args.hidden_channels, dataset.num_classes, args.num_layers,
              args.dropout, num_nodes_dict, list(x_dict.keys()),
              len(edge_index_dict.keys())).to(device)
 
-x_dict = {k: v.to(device) for k, v in x_dict.items()}
+# x_dict = {k: v.to(device) for k, v in x_dict.items()}
+embedding = torch.load('data/mag_embedding.pt', map_location='cpu')
 
+# x_dict = {k: v.to(device) for k, v in x_dict.items()}
+x_dict = {k: torch.cat([v, embedding], dim=-1) for k, v in x_dict.items()}
+x_dict = {k: v.to(device) for k, v in x_dict.items()}
 y_global = node_type.new_full((node_type.size(0), 1), -1)
 y_global[local2global['paper']] = data.y_dict['paper']
 y_global = y_global.to(device)
@@ -309,8 +301,8 @@ y_global = y_global.to(device)
 def train(epoch):
     model.train()
 
-    # pbar = tqdm(total=args.num_steps * args.batch_size)
-    # pbar.set_description(f'Epoch {epoch:02d}')
+    pbar = tqdm(total=args.num_steps * args.batch_size)
+    pbar.set_description(f'Epoch {epoch:02d}')
 
     total_loss = total_examples = 0
     for data in train_loader:
@@ -327,37 +319,11 @@ def train(epoch):
         num_examples = data.train_mask.sum().item()
         total_loss += loss.item() * num_examples
         total_examples += num_examples
-        # pbar.update(args.batch_size)
+        pbar.update(args.batch_size)
 
-    # pbar.close()
+    pbar.close()
 
     return total_loss / total_examples
-
-
-# @torch.no_grad()
-# def test():
-#     model.eval()
-
-#     out = model.inference(x_dict, edge_index_dict, key2int)
-#     out = out[key2int['paper']]
-
-#     y_pred = out.argmax(dim=-1, keepdim=True).cpu()
-#     y_true = data.y_dict['paper']
-
-#     train_acc = evaluator.eval({
-#         'y_true': y_true[split_idx['train']['paper']],
-#         'y_pred': y_pred[split_idx['train']['paper']],
-#     })['acc']
-#     valid_acc = evaluator.eval({
-#         'y_true': y_true[split_idx['valid']['paper']],
-#         'y_pred': y_pred[split_idx['valid']['paper']],
-#     })['acc']
-#     test_acc = evaluator.eval({
-#         'y_true': y_true[split_idx['test']['paper']],
-#         'y_pred': y_pred[split_idx['test']['paper']],
-#     })['acc']
-
-#     return train_acc, valid_acc, test_acc
 
 
 @torch.no_grad()
@@ -390,26 +356,32 @@ def test():
 
     return train_acc, valid_acc, test_acc
 
-time_used = []
-test()  # Test if inference on GPU succeeds.
+
+# test()  # Test if inference on GPU succeeds.
 for run in range(args.runs):
-    st = time.perf_counter()
     model.reset_parameters()
+    print(sum(p.numel() for p in model.parameters()), flush=True)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
+
+    best_val_acc = 0
+
     for epoch in range(1, 1 + args.epochs):
         loss = train(epoch)
         torch.cuda.empty_cache()
         result = test()
         logger.add_result(run, result)
-        train_acc, valid_acc, test_acc = result
+        train_acc, val_acc, test_acc = result
+
+        if val_acc > best_val_acc:
+            best_val_acc = val_acc
+            best_result = result
+
         print(f'Run: {run + 1:02d}, '
               f'Epoch: {epoch:02d}, '
               f'Loss: {loss:.4f}, '
               f'Train: {100 * train_acc:.2f}%, '
-              f'Valid: {100 * valid_acc:.2f}%, '
+              f'Valid: {100 * val_acc:.2f}%, '
               f'Test: {100 * test_acc:.2f}%')
-    time_used.append(time.perf_counter()-st)
     logger.print_statistics(run)
+    # logger.add_result(run, best_result)
 logger.print_statistics()
-time_used = torch.tensor(time_used)
-print("time used:", time_used.mean(), time_used.std())
