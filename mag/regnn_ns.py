@@ -166,6 +166,14 @@ for key, N in data.num_nodes_dict.items():
             path = os.path.join(home_dir, "projects/gcns/15-heterogeneous/SeHGNN/data/complex_nars")
             x_dict[key2int[key]] = torch.load(os.path.join(path, key+'.pt'), map_location=torch.device('cpu')).float()
             num_feature_dict[key2int[key]] = x_dict[key2int[key]].size(1)
+        # elif args.feats_type == 5:
+        #     # x_dict = {k: v.to(device) for k, v in x_dict.items()}
+        #     embedding = torch.load('data/mag_embedding.pt', map_location='cpu')
+
+        #     # x_dict = {k: v.to(device) for k, v in x_dict.items()}
+        #     print(embedding.shape)
+        #     x_dict = {k: torch.cat([v, embedding], dim=-1) for k, v in x_dict.items()}
+        #     x_dict = {k: v.to(device) for k, v in x_dict.items()}
     else:
         num_feature_dict[key2int[key]] = 128
 
@@ -200,7 +208,7 @@ class REGCNConv(MessagePassing):
                  dropout=0., 
                  use_softmax=False
                 ):
-        super(REGCNConv, self).__init__(aggr='add')
+        super(REGCNConv, self).__init__(aggr='mean')
 
         self.in_channels = in_channels
         self.out_channels = out_channels
@@ -276,7 +284,7 @@ class REGCNConv(MessagePassing):
             ew = edge_weight * norm 
         
         ew = F.dropout(ew, p=self.dropout, training=self.training)
-        out = self.propagate(edge_index, x=x, ew=ew)
+        out = self.propagate(edge_index, x=x, ew=edge_weight)
 
         # out += x_target
 
@@ -406,11 +414,11 @@ class REGCN(torch.nn.Module):
                     x = self.bns[i](x)
                 x = F.relu(x)
                 x = F.dropout(x, p=self.dropout, training=self.training)
-        x1 = self.out_lin1(x)        
-        if self.residual:
-            x1 += x
-        x = F.relu(x1)
-        x = F.dropout(x, p=self.dropout, training=self.training)
+        # x1 = self.out_lin1(x)        
+        # if self.residual:
+        #     x1 += x
+        # x = F.relu(x1)
+        # x = F.dropout(x, p=self.dropout, training=self.training)
         x = self.out_lin2(x)        
 
         return x.log_softmax(dim=-1)
@@ -436,10 +444,10 @@ class REGCN(torch.nn.Module):
 
             x_all = torch.cat(xs, dim=0)
         x = x_all.to(device)
-        x1 = self.out_lin1(x)    
-        if self.residual:
-            x1 += x    
-        x = F.relu(x1)
+        # x1 = self.out_lin1(x)    
+        # if self.residual:
+        #     x1 += x    
+        # x = F.relu(x1)
         x = self.out_lin2(x) 
 
         return x

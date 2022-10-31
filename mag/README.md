@@ -130,3 +130,30 @@ time used: tensor(29158.7090) tensor(nan)
 python regnn_ns.py --device 7 --runs 1 --epoch 200 --use_bn --residual --train_batch_size 1024 --test_batch_size 512 --lr 0.001 --hidden 256
 
 ```
+
+```
+# 
+# Highest Train: 63.52; Highest Valid: 49.91; Final Train: 61.07; Final Test: 49.08
+python regnn_ns.py --device 9 --runs 1 --epoch 200 --use_bn --residual --train_batch_size 512 --test_batch_size 256 --lr 0.001 --hidden 512 --feats_type 4 --scaling_factor 10.
+
+# feats_type -> 3
+# Highest Train: 62.75; Highest Valid: 50.13; Final Train: 62.17; Final Test: 49.43
+python regnn_ns.py --device 9 --runs 1 --epoch 200 --use_bn --residual --train_batch_size 512 --test_batch_size 256 --lr 0.001 --hidden 512 --feats_type 3 --scaling_factor 10.
+
+# R -> 0.000000001
+# Highest Train: 61.17; Highest Valid: 49.58; Final Train: 61.09; Final Test: 48.66
+python regnn_ns.py --device 8 --runs 1 --epoch 200 --use_bn --residual --train_batch_size 51
+2 --test_batch_size 256 --lr 0.001 --hidden 512 --feats_type 4 --scaling_factor 0.000000001
+
+# feats_type -> 3; R -> 0.000000001
+# Highest Train: 60.69; Highest Valid: 49.73; Final Train: 58.92; Final Test: 48.98
+python regnn_ns.py --device 8 --runs 1 --epoch 200 --use_bn --residual --train_batch_size 512 --test_batch_size 256 --lr 0.001 --hidden 512 --feats_type 3 --scaling_factor 0.000000001
+```
+
+### saint
+
+rgcn_saint: 47.48
+subgraph test
+
++ metapath2vec embedding: 48.54
++ 256 hidden: 49+
