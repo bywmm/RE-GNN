@@ -28,7 +28,8 @@ class REGCN(nn.Module):
         self.layers.append(GConv(num_etypes, R, in_feats, n_hidden, bias=False, activation=None, dropout=dropout, weight=False))
         for i in range(1, n_layers - 1):
             self.layers.append(GConv(num_etypes, R, n_hidden, n_hidden, activation=activation, dropout=dropout))
-        self.layers.append(GConv(num_etypes, R, n_hidden, n_classes, dropout=dropout))
+        self.layers.append(GConv(num_etypes, R, n_hidden, n_classes, bias=False, dropout=dropout, weight=False))
+        self.out_lin = nn.Linear(n_hidden, n_classes, bias=True)
         self.dropout = nn.Dropout(p=dropout)
 
     def forward(self, features_list, e_feat):
@@ -41,4 +42,5 @@ class REGCN(nn.Module):
         for l in range(1, self.num_layers):
             h = self.dropout(h)
             h = self.layers[l](self.g, h, e_feat)
-        return h
+        out = self.out_lin(h)
+        return out, h
