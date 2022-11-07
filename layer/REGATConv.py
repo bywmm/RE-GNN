@@ -19,14 +19,17 @@ class REGATConv(nn.Module):
                  negative_slope=0.2,
                  residual=False,
                  activation=None,
-                 ver=1):
+                 use_weight=True):
         super(REGATConv, self).__init__()
         self.num_etypes = num_etypes
         self.num_heads = num_heads
         self.in_feats = in_feats
         self.out_feats = out_feats
-        self.ver = ver
-        self.fc = nn.Linear(in_feats, out_feats * num_heads, bias=False)
+        self.use_weight = use_weight
+        if self.use_weight:
+            self.fc = nn.Linear(in_feats, out_feats * num_heads, bias=False)
+        else:
+            self.fc = nn.Identity()
         self.attn_l = nn.Parameter(th.FloatTensor(size=(1, num_heads, out_feats)))
         self.attn_r = nn.Parameter(th.FloatTensor(size=(1, num_heads, out_feats)))
         self.feat_drop = nn.Dropout(feat_drop)
@@ -49,7 +52,8 @@ class REGATConv(nn.Module):
     def reset_parameters(self):
         """Reinitialize learnable parameters."""
         gain = nn.init.calculate_gain('relu')
-        nn.init.xavier_normal_(self.fc.weight, gain=gain)
+        if self.use_weight:
+            nn.init.xavier_normal_(self.fc.weight, gain=gain)
         nn.init.xavier_normal_(self.attn_l, gain=gain)
         nn.init.xavier_normal_(self.attn_r, gain=gain)
         if isinstance(self.res_fc, nn.Linear):
@@ -59,7 +63,7 @@ class REGATConv(nn.Module):
 
     def forward(self, graph, feat, edge_feats=None):
         graph = graph.local_var()
-        h = self.feat_drop(feat)
+        h = feat
         feat = self.fc(h).view(-1, self.num_heads, self.out_feats)
         el = (feat * self.attn_l).sum(dim=-1).unsqueeze(-1)
         er = (feat * self.attn_r).sum(dim=-1).unsqueeze(-1)
@@ -77,7 +81,7 @@ class REGATConv(nn.Module):
         e = graph.edata["e"]
 
         if edge_feats is not None:
-            e *= graph.edata["ee"].reshape(e.size(0), self.num_heads, 1)
+            e += graph.edata["ee"].reshape(e.size(0), self.num_heads, 1)
             
         e = self.leaky_relu(e)
         # compute softmax

@@ -219,8 +219,8 @@ def run(args):
     #     micro_f1[:, 0].mean(), micro_f1[:, 1].mean(), train_size) for micro_f1, train_size in
     #     zip(svm_micro_f1_lists, [0.8, 0.6, 0.4, 0.2, 0.1, 0.05])]))
     print('K-means tests summary')
-    print('NMI: {:.6f}~{:.6f}'.format(nmi_mean_list.mean(), nmi_mean_list.std()))
-    print('ARI: {:.6f}~{:.6f}'.format(ari_mean_list.mean(), ari_mean_list.std()))
+    print('NMI: {:.2f} ± {:.2f}'.format(nmi_mean_list.mean() * 100, nmi_mean_list.std() * 100))
+    print('ARI: {:.2f} ± {:.2f}'.format(ari_mean_list.mean() * 100, ari_mean_list.std() * 100))
     time_used = torch.tensor(time_used)
     print("Used Time:", time_used.mean(), time_used.std())
 

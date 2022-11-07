@@ -41,15 +41,15 @@ class REGAT(nn.Module):
         # hidden layers
         for l in range(1, num_layers-1):
             # due to multi-head, the in_dim = num_hidden * num_heads
-            # self.bns.append(nn.BatchNorm1d(num_hidden * heads[l-1]))
             self.gat_layers.append(GConv(
                 self.num_etypes, R, num_hidden * heads[l-1], num_hidden, heads[l],
                 feat_drop, attn_drop, negative_slope, residual, self.activation))
-        self.bns.append(nn.BatchNorm1d(num_hidden * heads[-2]))
         # output projection
         self.gat_layers.append(GConv(
-            self.num_etypes, R, num_hidden * heads[-2], num_classes, heads[-1],
-            feat_drop, attn_drop, negative_slope, residual, None))
+            # self.num_etypes, R, num_hidden * heads[-2], num_classes, heads[-1],
+            self.num_etypes, R, num_hidden * heads[-2], num_hidden, heads[-2],
+            feat_drop, attn_drop, negative_slope, residual, None, use_weight=False))
+        self.out_lin = nn.Linear(num_hidden * heads[-2], num_classes)
 
     def forward(self, features_list, e_feat):
         h = []
@@ -58,9 +58,9 @@ class REGAT(nn.Module):
         h = torch.cat(h, 0)
         h = self.gat_layers[0](self.g, h, e_feat).flatten(1)
         
-        for l in range(1, self.num_layers-1):
+        for l in range(1, self.num_layers):
             h = self.gat_layers[l](self.g, h, e_feat).flatten(1)
-            # h = self.bns[l](h)
         # output projection
-        logits = self.gat_layers[-1](self.g, h, e_feat).mean(1)
-        return logits
+        embeddings = self.gat_layers[-1](self.g, h, e_feat).flatten(1)
+        out = self.out_lin(embeddings)
+        return out, embeddings
