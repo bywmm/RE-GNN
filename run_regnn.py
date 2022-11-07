@@ -37,7 +37,7 @@ def set_seed(seed):
 set_seed(123)
 
 def run(args):
-    features_list, adjM, adjMM, adjMM_wsl, adjMM_wsl_2, type_mask, labels, train_val_test_idx = load_data(args.dataset)
+    _, features_list, adjM, adjMM, adjMM_wsl, adjMM_wsl_2, type_mask, labels, train_val_test_idx = load_data(args.dataset)
     device = torch.device(f'cuda:{args.device}' if torch.cuda.is_available() else 'cpu')
     features_list = [torch.FloatTensor(features).to(device) for features in features_list]
 
