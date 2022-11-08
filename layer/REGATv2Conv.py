@@ -23,26 +23,32 @@ class REGATv2Conv(nn.Module):
                  activation=None,
                  allow_zero_in_degree=False,
                  bias=True,
-                 share_weights=False):
+                 share_weights=False,
+                 use_weight=True):
         super(REGATv2Conv, self).__init__()
         self.num_etypes = num_etypes
         self._num_heads = num_heads
         self._in_src_feats, self._in_dst_feats = expand_as_pair(in_feats)
         self._out_feats = out_feats
         self._allow_zero_in_degree = allow_zero_in_degree
-        if isinstance(in_feats, tuple):
-            self.fc_src = nn.Linear(
-                self._in_src_feats, out_feats * num_heads, bias=bias)
-            self.fc_dst = nn.Linear(
-                self._in_dst_feats, out_feats * num_heads, bias=bias)
-        else:
-            self.fc_src = nn.Linear(
-                self._in_src_feats, out_feats * num_heads, bias=bias)
-            if share_weights:
-                self.fc_dst = self.fc_src
-            else:
-                self.fc_dst = nn.Linear(
+        self.use_weight = use_weight
+        if self.use_weight:
+            if isinstance(in_feats, tuple):
+                self.fc_src = nn.Linear(
                     self._in_src_feats, out_feats * num_heads, bias=bias)
+                self.fc_dst = nn.Linear(
+                    self._in_dst_feats, out_feats * num_heads, bias=bias)
+            else:
+                self.fc_src = nn.Linear(
+                    self._in_src_feats, out_feats * num_heads, bias=bias)
+                if share_weights:
+                    self.fc_dst = self.fc_src
+                else:
+                    self.fc_dst = nn.Linear(
+                        self._in_src_feats, out_feats * num_heads, bias=bias)
+        else:
+            self.fc_src = nn.Identity()
+            self.fc_dst = nn.Identity()
         self.attn = nn.Parameter(th.FloatTensor(size=(1, num_heads, out_feats)))
         self.feat_drop = nn.Dropout(feat_drop)
         self.attn_drop = nn.Dropout(attn_drop)
@@ -66,13 +72,14 @@ class REGATv2Conv(nn.Module):
 
     def reset_parameters(self):
         gain = nn.init.calculate_gain('relu')
-        nn.init.xavier_normal_(self.fc_src.weight, gain=gain)
-        if self.bias:
-            nn.init.constant_(self.fc_src.bias, 0)
-        if not self.share_weights:
-            nn.init.xavier_normal_(self.fc_dst.weight, gain=gain)
+        if self.use_weight:
+            nn.init.xavier_normal_(self.fc_src.weight, gain=gain)
             if self.bias:
-                nn.init.constant_(self.fc_dst.bias, 0)
+                nn.init.constant_(self.fc_src.bias, 0)
+            if not self.share_weights:
+                nn.init.xavier_normal_(self.fc_dst.weight, gain=gain)
+                if self.bias:
+                    nn.init.constant_(self.fc_dst.bias, 0)
         nn.init.xavier_normal_(self.attn, gain=gain)
         if isinstance(self.res_fc, nn.Linear):
             nn.init.xavier_normal_(self.res_fc.weight, gain=gain)
@@ -135,7 +142,7 @@ class REGATv2Conv(nn.Module):
                 edge_weight = nn.LeakyReLU()(edge_weight)
                 ee = edge_weight[edge_feats - 1]
                 graph.edata.update({'ee': ee})
-                e *= graph.edata["ee"].reshape(e.size(0), self._num_heads, 1)
+                e += graph.edata["ee"].reshape(e.size(0), self._num_heads, 1)
 
             # compute softmax
             graph.edata['a'] = self.attn_drop(edge_softmax(graph, e)) # (num_edge, num_heads)

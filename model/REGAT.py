@@ -61,6 +61,6 @@ class REGAT(nn.Module):
         for l in range(1, self.num_layers):
             h = self.gat_layers[l](self.g, h, e_feat).flatten(1)
         # output projection
-        embeddings = self.gat_layers[-1](self.g, h, e_feat).flatten(1)
-        out = self.out_lin(embeddings)
-        return out, embeddings
+        embeddings = self.gat_layers[-1](self.g, h, e_feat)
+        out = self.out_lin(embeddings.flatten(1))
+        return out, embeddings.mean(1)
