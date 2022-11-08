@@ -2,14 +2,14 @@ cuda=$1
 dataset=$2
 ft=$3
 
-hidden_channels_lst=(16 32)
-n_layers_lst=(2 3 4)
+hidden_channels_lst=(16 64)
+n_layers_lst=(2 4)
 
 lr_lst=(0.001 0.005)
 
 weight_decay_lst=(0. 0.0005 0.001)
 
-dropout_lst=(0.5 0.7)
+dropout_lst=(0.2 0.5 0.7)
 
 R_list=(10. 100.)
 

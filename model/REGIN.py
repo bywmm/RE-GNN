@@ -14,7 +14,7 @@ class MLP(nn.Module):
         self.linears = nn.ModuleList()
         # two-layer MLP
         self.linears.append(nn.Linear(input_dim, hidden_dim, bias=False))
-        self.linears.append(nn.Linear(hidden_dim, output_dim, bias=False))
+        self.linears.append(nn.Linear(input_dim, output_dim, bias=False))
         self.dropout = nn.Dropout(dropout)
         self.activation = activation
     
@@ -24,10 +24,10 @@ class MLP(nn.Module):
 
     def forward(self, x):
         h = x
-        h = self.dropout(h)
-        h = self.linears[0](h)
-        if self.activation is not None:
-            h = self.activation(h)
+        # h = self.dropout(h)
+        # h = self.linears[0](h)
+        # if self.activation is not None:
+        #     h = self.activation(h)
         h = self.dropout(h)
         return self.linears[1](h)
 
@@ -52,20 +52,24 @@ class REGIN(nn.Module):
             nn.init.xavier_normal_(fc.weight, gain=1.414)
 
         self.layers = nn.ModuleList()
-        # five-layer GCN with two-layer MLP aggregator and sum-neighbor-pooling scheme
+        # five-layer GCN with one-layer MLP aggregator and sum-neighbor-pooling scheme
         for layer in range(n_layers):  # excluding the input layer
             in_c = input_dim if layer ==0 else hidden_dim
             out_c = output_dim if layer == n_layers-1 else hidden_dim
-            mlp = MLP(in_c, hidden_dim, out_c, activation, dropout)
-            self.layers.append(REGINConv(num_etypes, R, mlp, activation=activation))  
+            if layer != n_layers - 1:
+                mlp = MLP(in_c, hidden_dim, out_c, activation, dropout)
+                self.layers.append(REGINConv(num_etypes, R, mlp, activation=activation))
+            else:
+                self.layers.append(REGINConv(num_etypes, R, None, activation=None))
 
-        self.dropout = nn.Dropout(dropout)
+        self.out_mlp = MLP(hidden_dim, hidden_dim, output_dim, activation, dropout)
+        # self.dropout = nn.Dropout(dropout)
         self.reset_parameters()
 
     def reset_parameters(self):
         for layer in self.layers:
             layer.reset_parameters()
-
+        self.out_mlp.reset_parameters()
 
     def forward(self, features_list, e_feat):
         h = []
@@ -75,7 +79,7 @@ class REGIN(nn.Module):
         h = self.layers[0](self.g, h, e_feat)
 
         for l in range(1, self.num_layers):
-            h = self.dropout(h)
             h = self.layers[l](self.g, h, e_feat)
-        return h
+        out = self.out_mlp(h)
+        return out, h
 
