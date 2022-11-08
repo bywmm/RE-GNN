@@ -1,7 +1,7 @@
-from copy import copy
 import argparse
 from tqdm import tqdm
 import os
+import shutil
 import time
 import random
 import numpy as np
@@ -15,6 +15,7 @@ from torch_geometric.loader import NeighborSampler
 from torch_geometric.utils.hetero import group_hetero_graph
 from torch_geometric.nn import MessagePassing
 from utils import weighted_degree, get_self_loop_index, softmax
+from utils import MsgNorm, args_print
 
 from ogb.nodeproppred import PygNodePropPredDataset, Evaluator
 
@@ -55,14 +56,16 @@ parser.add_argument('--feats_type', type=int, default=3,
 parser.add_argument('--use_bn', action='store_true', default=False)
 parser.add_argument('--residual', action='store_true', default=False)
 parser.add_argument('--gcn', action='store_true', default=False)
+parser.add_argument('--Norm4', action='store_true', default=False)
 parser.add_argument('--self_loop_type', type=int, default=1,
                     help='1 - add self-loop connections and then sample it as edges;' + 
                          '2 - sample nodes and then add self-loop')
+parser.add_argument('--comments', type=str, default='raw')
 
 args = parser.parse_args()
-print(args)
+args_print(args)
 
-root = '/home/wangjunfu/dataset/graph/OGB'
+root = '/irip/wangjunfu_2021/dataset/graph/OGB'
 dataset = PygNodePropPredDataset(root=root, name='ogbn-mag')
 data = dataset[0]
 split_idx = dataset.get_idx_split()
@@ -142,41 +145,44 @@ num_feature_dict = {}
 for key, N in data.num_nodes_dict.items():
     num_nodes_dict[key2int[key]] = N
     num_nodes += N
-    if key2int[key] != target_node_type:
         # 1 - target node features (zero vec for others)
-        if args.feats_type == 1:
+    if args.feats_type == 1:
+        if key2int[key] != target_node_type:
             x_dict[key2int[key]] = torch.zeros(N, 128)
-            num_feature_dict[key2int[key]] = 128
-        # 2 - target node features (id vec for others)
-        elif args.feats_type == 2:
-            # Using Node Embeding
-            #
-            # indices = np.vstack((np.arange(N), np.arange(N)))
-            # indices = torch.LongTensor(indices)
-            # values = torch.FloatTensor(np.ones(N))
-            # x_dict[key2int[key]] = torch.sparse.FloatTensor(indices, values, torch.Size([N, N])).to_dense()
-            num_feature_dict[key2int[key]] = 128
-        # 3 - target node features (random features for others)
-        elif args.feats_type == 3:
+        num_feature_dict[key2int[key]] = 128
+    # 2 - target node features (id vec for others)
+    elif args.feats_type == 2:
+        # Using Node Embeding
+        # indices = np.vstack((np.arange(N), np.arange(N)))
+        # indices = torch.LongTensor(indices)
+        # values = torch.FloatTensor(np.ones(N))
+        # x_dict[key2int[key]] = torch.sparse.FloatTensor(indices, values, torch.Size([N, N])).to_dense()
+        num_feature_dict[key2int[key]] = 128
+    # 3 - target node features (random features for others)
+    elif args.feats_type == 3:
+        if key2int[key] != target_node_type:
             x_dict[key2int[key]] = torch.Tensor(N, 128).uniform_(-0.5, 0.5)
-            num_feature_dict[key2int[key]] = 128
-        # 4 - Use extra embeddings generated with the Complex method
-        elif args.feats_type == 4:
+        num_feature_dict[key2int[key]] = 128
+    # 4 - Use extra embeddings generated with the Complex method
+    elif args.feats_type == 4:
+        if key2int[key] != target_node_type:
             home_dir = os.getenv("HOME")
             path = os.path.join(home_dir, "projects/gcns/15-heterogeneous/SeHGNN/data/complex_nars")
             x_dict[key2int[key]] = torch.load(os.path.join(path, key+'.pt'), map_location=torch.device('cpu')).float()
             num_feature_dict[key2int[key]] = x_dict[key2int[key]].size(1)
-        # elif args.feats_type == 5:
-        #     # x_dict = {k: v.to(device) for k, v in x_dict.items()}
-        #     embedding = torch.load('data/mag_embedding.pt', map_location='cpu')
-
-        #     # x_dict = {k: v.to(device) for k, v in x_dict.items()}
-        #     print(embedding.shape)
-        #     x_dict = {k: torch.cat([v, embedding], dim=-1) for k, v in x_dict.items()}
-        #     x_dict = {k: v.to(device) for k, v in x_dict.items()}
-    else:
-        num_feature_dict[key2int[key]] = 128
-
+        else:
+            num_feature_dict[key2int[key]] = 128
+if args.feats_type == 5:
+    nodes_embedding_path = "data/mag_embedding.pt"
+    embedding_dict = torch.load(nodes_embedding_path, map_location='cpu')
+    print(f"{nodes_embedding_path} is loaded successfully.")
+    for key, N in data.num_nodes_dict.items():
+        if key2int[key] != target_node_type:
+            x_dict[key2int[key]] = embedding_dict[key]
+        else:
+            x_dict[key2int[key]] = torch.cat([x_dict[key2int[key]], embedding_dict[key]], dim=1)
+        num_feature_dict[key2int[key]] = x_dict[key2int[key]].size(1)
+           
 # paper training nodes.
 paper_idx = local2global['paper']
 paper_train_idx = paper_idx[split_idx['train']['paper']]
@@ -189,13 +195,13 @@ elif args.num_layers == 4:
     tr_size = [20, 15, 10, 10]   # batch_size 32
 train_loader = NeighborSampler(edge_index, node_idx=paper_train_idx,
                                sizes=tr_size, batch_size=args.train_batch_size, shuffle=True,
-                               num_workers=12)
+                               num_workers=8)
 test_loader = NeighborSampler(edge_index, node_idx=paper_idx,
                                sizes=tr_size, batch_size=args.test_batch_size, shuffle=False,
-                               num_workers=12)
+                               num_workers=8)
 subgraph_loader = NeighborSampler(edge_index, node_idx=None, 
                                sizes=[-1], batch_size=args.test_batch_size, shuffle=False,
-                               num_workers=12)
+                               num_workers=8)
 
 class REGCNConv(MessagePassing):
     def __init__(self,
@@ -206,7 +212,9 @@ class REGCNConv(MessagePassing):
                  scaling_factor=100.,
                  gcn=False,
                  dropout=0., 
-                 use_softmax=False
+                 use_softmax=False,
+                 residual=False,
+                 Norm4=False
                 ):
         super(REGCNConv, self).__init__(aggr='mean')
 
@@ -216,9 +224,12 @@ class REGCNConv(MessagePassing):
         self.num_edge_types = num_edge_types
         self.use_softmax = use_softmax
         self.dropout = dropout
+        self.residual = residual
+        self.Norm4 = Norm4
 
         self.weight = Parameter(torch.Tensor(in_channels, out_channels))
-        # self.weight_root = Parameter(torch.Tensor(in_channels, out_channels))
+        if self.residual:
+            self.weight_root = Parameter(torch.Tensor(in_channels, out_channels))
         self.bias = Parameter(torch.Tensor(out_channels))
         if args.self_loop_type in [1, 3]:
             rw_dim = self.num_edge_types
@@ -230,13 +241,19 @@ class REGCNConv(MessagePassing):
             self.relation_weight = Parameter(torch.Tensor(rw_dim), requires_grad=True)
         self.scaling_factor = scaling_factor
 
+        if self.Norm4:
+            self.layer_norm = torch.nn.LayerNorm(out_channels)
+
         self.reset_parameters()
 
     def reset_parameters(self):
         init.xavier_uniform_(self.weight)
-        # init.xavier_uniform_(self.weight_root)
+        if self.residual:
+            init.xavier_uniform_(self.weight_root)
         init.zeros_(self.bias)
         init.constant_(self.relation_weight, 1.0 / self.scaling_factor)
+        if self.Norm4:
+            self.layer_norm.reset_parameters()
 
     def forward(self, x, edge_index, edge_type, target_node_type, return_weights=False):
         # shape of x: [N, in_channels]
@@ -261,7 +278,10 @@ class REGCNConv(MessagePassing):
 
         x_src, x_target = x
         x_src = torch.matmul(x_src, self.weight)
-        x_target = torch.matmul(x_target, self.weight)
+        if self.residual:
+            x_target = torch.matmul(x_target, self.weight_root)
+        else:
+            x_target = torch.matmul(x_target, self.weight)
         x = (x_src, x_target)
 
         # Cal edge weight according to its relation type
@@ -281,15 +301,19 @@ class REGCNConv(MessagePassing):
             deg = weighted_degree(col, edge_weight, x_target.size(0), dtype=x_target.dtype) #.abs()
             deg_inv = deg.pow(-1.0)
             norm = deg_inv[col]
-            ew = edge_weight * norm 
+            ew = edge_weight * norm
         
-        ew = F.dropout(ew, p=self.dropout, training=self.training)
+        # ew = F.dropout(ew, p=self.dropout, training=self.training)
         out = self.propagate(edge_index, x=x, ew=edge_weight)
-
-        # out += x_target
+            
+        if self.residual:
+            out += x_target
+        
+        if self.Norm4:
+            out = self.layer_norm(out)
 
         if return_weights:
-            return out, ew
+            return out, ew, relation_weight
         else:
             return out
 
@@ -306,7 +330,7 @@ class REGCNConv(MessagePassing):
 
 class REGCN(torch.nn.Module):
     def __init__(self, in_channels, hidden_channels, out_channels, num_layers, scaling_factor,
-                 dropout, num_feature_dict, num_edge_types, use_bn, residual, gcn):
+                 dropout, num_feature_dict, num_edge_types, use_bn, residual, gcn, Norm4):
         super(REGCN, self).__init__()
 
         self.in_channels = in_channels
@@ -316,6 +340,7 @@ class REGCN(torch.nn.Module):
         self.dropout = dropout
         self.use_bn = use_bn
         self.residual = residual
+        self.Norm4 = Norm4
 
         node_types = list(num_feature_dict.keys())
         num_node_types = len(node_types)
@@ -337,16 +362,13 @@ class REGCN(torch.nn.Module):
 
         # REGNNConv
         self.convs = ModuleList()
-        self.convs.append(REGCNConv(hidden_channels, hidden_channels, num_node_types, num_edge_types, scaling_factor, gcn))
+        self.convs.append(REGCNConv(hidden_channels, hidden_channels, num_node_types, num_edge_types, scaling_factor, gcn, Norm4=self.Norm4))
         for _ in range(num_layers - 1):
-            self.convs.append(REGCNConv(hidden_channels, hidden_channels, num_node_types, num_edge_types, scaling_factor, gcn))
+            self.convs.append(REGCNConv(hidden_channels, hidden_channels, num_node_types, num_edge_types, scaling_factor, gcn, Norm4=self.Norm4))
         # self.convs.append(REGCNConv(hidden_channels, out_channels, num_node_types, num_edge_types, scaling_factor, gcn))
-        self.out_lin1 = Linear(hidden_channels, hidden_channels)
-        self.out_lin2 = Linear(hidden_channels, out_channels)
-
-        # self.prelus = ModuleList()
-        # for _ in range(num_layers-1):
-        #     self.prelus.append(torch.nn.PReLU())
+        self.out_lin = Linear(hidden_channels, out_channels)
+        if self.Norm4:
+            self.norm = torch.nn.LayerNorm(hidden_channels)
 
         self.bns = ModuleList()
         for _ in range(num_layers):
@@ -366,8 +388,9 @@ class REGCN(torch.nn.Module):
             conv.reset_parameters()
         for bn in self.bns:
             bn.reset_parameters()
-        self.out_lin1.reset_parameters()
-        self.out_lin2.reset_parameters()
+        self.out_lin.reset_parameters()
+        if self.Norm4:
+            self.norm.reset_parameters()
 
     def group_input(self, x_dict, node_type, local_node_idx, n_id=None, device=None):
         # Create global node feature matrix.
@@ -401,6 +424,10 @@ class REGCN(torch.nn.Module):
 
         x = self.group_input(x_dict, node_type, local_node_idx, n_id, node_type.device)
         node_type = node_type[n_id]
+        if self.Norm4:
+            x = self.norm(x)
+
+        # x = F.dropout(x, p=self.dropout, training=self.training)
 
         for i, (edge_index, e_id, size) in enumerate(adjs):
             x_target = x[:size[1]]  # Target node embeddings.
@@ -414,17 +441,15 @@ class REGCN(torch.nn.Module):
                     x = self.bns[i](x)
                 x = F.relu(x)
                 x = F.dropout(x, p=self.dropout, training=self.training)
-        # x1 = self.out_lin1(x)        
-        # if self.residual:
-        #     x1 += x
-        # x = F.relu(x1)
-        # x = F.dropout(x, p=self.dropout, training=self.training)
-        x = self.out_lin2(x)        
+        x = self.out_lin(x)
 
         return x.log_softmax(dim=-1)
         
     def inference(self, x_dict, subgraph_loader, edge_type, node_type, local_node_idx, device):
         x_all = self.group_input(x_dict, node_type, local_node_idx, device=torch.device('cpu'))
+        if self.Norm4:
+            x_all = self.norm(x_all.to(device)).to('cpu')
+
         for layer in range(self.num_layers):
             xs = []
             for batch_size, n_id, adj in subgraph_loader:
@@ -444,11 +469,7 @@ class REGCN(torch.nn.Module):
 
             x_all = torch.cat(xs, dim=0)
         x = x_all.to(device)
-        # x1 = self.out_lin1(x)    
-        # if self.residual:
-        #     x1 += x    
-        # x = F.relu(x1)
-        x = self.out_lin2(x) 
+        x = self.out_lin(x)
 
         return x
 
@@ -456,10 +477,10 @@ class REGCN(torch.nn.Module):
 device = f'cuda:{args.device}' if torch.cuda.is_available() else 'cpu'
 
 model = REGCN(128, args.hidden_channels, dataset.num_classes, args.num_layers, args.scaling_factor,
-             args.dropout, num_feature_dict, len(edge_index_dict.keys()), args.use_bn, args.residual, args.gcn).to(device)
+             args.dropout, num_feature_dict, len(edge_index_dict.keys()), args.use_bn, args.residual, args.gcn, args.Norm4).to(device)
 
-# sum_p = sum(p.numel() for p in model.parameters())
-# print(sum_p)
+sum_p = sum(p.numel() for p in model.parameters())
+print("Num params:", sum_p)
 # assert False
 
 # Create global label vector.
@@ -477,8 +498,8 @@ y_global = y_global.to(device)
 def train(epoch, optimizer):
     model.train()
 
-    pbar = tqdm(total=paper_train_idx.size(0))
-    pbar.set_description(f'Epoch {epoch:02d}')
+    # pbar = tqdm(total=paper_train_idx.size(0))
+    # pbar.set_description(f'Epoch {epoch:02d}')
 
     total_loss = 0
     for batch_size, n_id, adjs in train_loader:
@@ -492,9 +513,9 @@ def train(epoch, optimizer):
         optimizer.step()
 
         total_loss += loss.item() * batch_size
-        pbar.update(batch_size)
+        # pbar.update(batch_size)
 
-    pbar.close()
+    # pbar.close()
 
     loss = total_loss / paper_train_idx.size(0)
 
@@ -564,14 +585,24 @@ def test_tmp():
 time_used = []
 # test()  # Test if inference on GPU succeeds.
 for run in range(args.runs):
+
+    save_model_folder = f'checkpoint/REGNN_NS'
+    shutil.rmtree(save_model_folder, ignore_errors=True)
+    os.makedirs(save_model_folder, exist_ok=True)
+    save_model_path = os.path.join(save_model_folder, f"REGNN_NS-{args.comments}-{run + 1:02d}.pkl")
+
     st = time.perf_counter()
     model.reset_parameters()
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+    best_valid_acc = -1.0
     for epoch in range(1, 1 + args.epochs):
         loss = train(epoch, optimizer)
         result = test()
         logger.add_result(run, result)
         train_acc, valid_acc, test_acc = result
+        if best_valid_acc < valid_acc:
+            best_valid_acc = valid_acc
+            torch.save(model.state_dict(), save_model_path)
         print(f'Run: {run + 1:02d}, '
               f'Epoch: {epoch:02d}, '
               f'Loss: {loss:.4f}, '

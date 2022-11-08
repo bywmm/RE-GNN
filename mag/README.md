@@ -136,19 +136,81 @@ python regnn_ns.py --device 7 --runs 1 --epoch 200 --use_bn --residual --train_b
 # Highest Train: 63.52; Highest Valid: 49.91; Final Train: 61.07; Final Test: 49.08
 python regnn_ns.py --device 9 --runs 1 --epoch 200 --use_bn --residual --train_batch_size 512 --test_batch_size 256 --lr 0.001 --hidden 512 --feats_type 4 --scaling_factor 10.
 
-# feats_type -> 3
-# Highest Train: 62.75; Highest Valid: 50.13; Final Train: 62.17; Final Test: 49.43
-python regnn_ns.py --device 9 --runs 1 --epoch 200 --use_bn --residual --train_batch_size 512 --test_batch_size 256 --lr 0.001 --hidden 512 --feats_type 3 --scaling_factor 10.
-
 # R -> 0.000000001
 # Highest Train: 61.17; Highest Valid: 49.58; Final Train: 61.09; Final Test: 48.66
 python regnn_ns.py --device 8 --runs 1 --epoch 200 --use_bn --residual --train_batch_size 51
 2 --test_batch_size 256 --lr 0.001 --hidden 512 --feats_type 4 --scaling_factor 0.000000001
 
+# feats_type -> 3
+# Highest Train: 62.75; Highest Valid: 50.13; Final Train: 62.17; Final Test: 49.43
+python regnn_ns.py --device 9 --runs 1 --epoch 200 --use_bn --residual --train_batch_size 512 --test_batch_size 256 --lr 0.001 --hidden 512 --feats_type 3 --scaling_factor 10.
+
+# feats_type -> 3; R -> 1
+# Highest Train: 62.84; Highest Valid: 50.01; Final Train: 62.84; Final Test: 48.92
+python regnn_ns.py --device 9 --runs 1 --epoch 200 --use_bn --residual --train_batch_size 512 --test_batch_size 256 --lr 0.001 --hidden 512 --feats_type 3 --scaling_factor 10.
+
+
 # feats_type -> 3; R -> 0.000000001
 # Highest Train: 60.69; Highest Valid: 49.73; Final Train: 58.92; Final Test: 48.98
 python regnn_ns.py --device 8 --runs 1 --epoch 200 --use_bn --residual --train_batch_size 512 --test_batch_size 256 --lr 0.001 --hidden 512 --feats_type 3 --scaling_factor 0.000000001
+
+# feats_type -> 3; + input dropout ; (- bn)
+Highest Train: 48.57; Highest Valid: 43.16; Final Train: 48.57; Final Test: 42.74
+
+
+# feats_type -> 3; self_loop_type -> 2
+Highest Train: 63.48; Highest Valid: 50.89; Final Train: 61.66; Final Test: 50.00
+python regnn_ns.py --runs 1 --epoch 200 --residual --use_bn --train_batch_size 512 --test_batch_size 256 --lr 0.001 --hidden 512 --feats_type 3 --scaling_factor 10 --self_loop_type 2 --comments ft3_sl2
+
+# feats_type -> 3; self_loop_type -> 2; -bn
+# Highest Train: 62.03; Highest Valid: 50.11; Final Train: 61.35; Final Test: 49.09
+python regnn_ns.py --runs 1 --epoch 200 --residual --train_batch_size 512 --test_batch_size 256 --lr 0.001 --hidden 512 --feats_type 3 --scaling_factor 10 --self_loop_type 2 --comments ft3_sl2_nobn
+
+
+# feats_type -> 3; self_loop_type -> 2; addnorm
+# Highest Train: 62.19; Highest Valid: 49.73; Final Train: 61.62; Final Test: 48.77
+python regnn_ns.py --runs 1 --epoch 200 --residual --use_bn --train_batch_size 512 --test_batch_size 256 --lr 0.001 --hidden 512 --feats_type 3 --scaling_factor 10 --self_loop_type 2 --comments ft3_sl2_addnorm
+
+
+# feats_type -> 3; self_loop_type -> 2; addnormdrop(drop=0.0)
+# Highest Train: 61.95; Highest Valid: 49.92; Final Train: 60.65; Final Test: 48.94
+python regnn_ns.py --runs 1 --epoch 200 --residual --use_bn --train_batch_size 512 --test_batch_size 256 --lr 0.001 --hidden 512 --feats_type 3 --scaling_factor 10 --self_loop_type 2 --comments ft3_sl2_addnormdrop
+
+# feats_type -> 3; self_loop_type -> 2; somftmaxnorm
+# Highest Train: 62.04; Highest Valid: 49.94; Final Train: 61.62; Final Test: 49.14
+python regnn_ns.py --runs 1 --epoch 200 --residual --use_bn --train_batch_size 512 --test_batch_size 256 --lr 0.001 --hidden 512 --feats_type 3 --scaling_factor 10 --self_loop_type 2 --comments ft3_sl2_softmaxnorm
+
+# feats_type -> 3; self_loop_type -> 2; addnorm; R -> 0.000000001
+# Highest Train: 60.75; Highest Valid: 48.97; Final Train: 59.34; Final Test: 48.12
+python regnn_ns.py --runs 1 --epoch 200 --use_bn --residual --
+train_batch_size 512 --test_batch_size 256 --lr 0.001 --hidden 512 --feats_type 3 --scaling_factor 0.00000000010 --self_loop_type 2 --comment
+s ft3_sl2_addnorm_r0
 ```
+
+```
+# newresidual
+# Highest Train: 65.68; Highest Valid: 50.83; Final Train: 65.58; Final Test: 49.48
+python regnn_ns.py --runs 1 --epoch 200 --residual --use_bn --train_batch_size 512 --test_batch_size 256 --lr 0.001 --hidden 512 --feats_type 3 --scaling_factor 10 --self_loop_type 2 --comments ft3_sl2_newresidual
+
+# 3 layer
+# Highest Train: 54.52; Highest Valid: 45.69; Final Train: 54.09; Final Test: 44.73
+python regnn_ns.py --runs 1 --epoch 200 --residual --use_bn --
+num_layers 3 --train_batch_size 128 --test_batch_size 64 --lr 0.001 --hidden 512 --feats_type 3 --scaling_factor 10 --self_loop_type 2 --comm
+ents ft3_sl2_layer3
+```
+
+```
+# feats_type -> 3; self_loop_type -> 2
+# python regnn_ns.py --runs 5 --epoch 200 --use_bn --residual --train_batch_size 512 --test_batch_size 256 --lr 0.001 --hidden 512 --feats_type 3 --scaling_factor 10 --self_loop_type 2 --comments ft3_sl2
+Highest Train: 63.23 ± 0.07
+Highest Valid: 50.60 ± 0.23
+  Final Train: 62.30 ± 0.63
+   Final Test: 49.54 ± 0.31
+```
+
+Norm4
+
+
 
 ### saint
 

@@ -1,5 +1,5 @@
 import argparse
-
+import os
 import torch
 from torch_sparse import transpose
 from torch_geometric.nn import MetaPath2Vec
@@ -8,10 +8,13 @@ from ogb.nodeproppred import PygNodePropPredDataset
 
 
 @torch.no_grad()
-def save_embedding(model):
-    embedding = model('paper').cpu()
-    torch.save(embedding, 'embedding.pt')
+def save_embedding(model, num_nodes_dict):
 
+    embedding_dict = {}
+    for node_type in num_nodes_dict:
+        # get embedding of node with specific type
+        embedding_dict[node_type] = model(node_type).detach().cpu()
+    torch.save(embedding_dict, 'data/mag_embedding.pt')
 
 def main():
     parser = argparse.ArgumentParser(description='OGBN-MAG (MetaPath2Vec)')
@@ -30,8 +33,9 @@ def main():
     device = f'cuda:{args.device}' if torch.cuda.is_available() else 'cpu'
     device = torch.device(device)
 
-    root = '/home/wangjunfu/dataset/graph/OGB'
-    dataset = PygNodePropPredDataset(root=root, name='ogbn-mag')
+    home_dir = os.getenv("HOME")
+    root = os.path.join(home_dir, "dataset/graph/OGB")
+    dataset = PygNodePropPredDataset('ogbn-mag', root=root)
     data = dataset[0]
 
     # We need to add reverse edges to the heterogeneous graph.
@@ -47,6 +51,8 @@ def main():
         m=data.num_nodes_dict['paper'],
         n=data.num_nodes_dict['field_of_study'])[0]
     print(data)
+    for node_type in data.num_nodes_dict:
+        print(node_type)
 
     metapath = [
         ('author', 'writes', 'paper'),
@@ -77,12 +83,12 @@ def main():
             optimizer.step()
 
             if (i + 1) % args.log_steps == 0:
-                print(f'Epoch: {epoch:02d}, Step: {i+1:03d}/{len(loader)}, '
+                print(f'Epoch: {epoch:02d}, Step: {i + 1:03d}/{len(loader)}, '
                       f'Loss: {loss:.4f}')
 
             if (i + 1) % 1000 == 0:  # Save model every 1000 steps.
-                save_embedding(model)
-        save_embedding(model)
+                save_embedding(model, data.num_nodes_dict)
+        save_embedding(model, data.num_nodes_dict)
 
 
 if __name__ == "__main__":

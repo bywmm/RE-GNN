@@ -13,7 +13,7 @@ from torch_geometric.utils import to_undirected
 from torch_geometric.loader import NeighborSampler
 from torch_geometric.utils.hetero import group_hetero_graph
 from torch_geometric.nn import MessagePassing
-from utils import MsgNorm
+from utils import MsgNorm, args_print
 
 from ogb.nodeproppred import PygNodePropPredDataset, Evaluator
 
@@ -47,7 +47,7 @@ parser.add_argument('--gcn_like', action='store_true')
 parser.add_argument('--subgraph_test', action='store_true')
 parser.add_argument('--Norm4', action='store_true')
 args = parser.parse_args()
-print(args)
+args_print(args)
 
 root = '/irip/wangjunfu_2021/dataset/graph/OGB'
 dataset = PygNodePropPredDataset(root=root, name='ogbn-mag')
