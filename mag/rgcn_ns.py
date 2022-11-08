@@ -13,6 +13,7 @@ from torch_geometric.utils import to_undirected
 from torch_geometric.loader import NeighborSampler
 from torch_geometric.utils.hetero import group_hetero_graph
 from torch_geometric.nn import MessagePassing
+from utils import MsgNorm
 
 from ogb.nodeproppred import PygNodePropPredDataset, Evaluator
 
@@ -44,10 +45,11 @@ parser.add_argument('--regcn_like', action='store_true')
 parser.add_argument('--scaling_factor', type=float, default=100.)
 parser.add_argument('--gcn_like', action='store_true')
 parser.add_argument('--subgraph_test', action='store_true')
+parser.add_argument('--Norm4', action='store_true')
 args = parser.parse_args()
 print(args)
 
-root = '/home/wangjunfu/dataset/graph/OGB'
+root = '/irip/wangjunfu_2021/dataset/graph/OGB'
 dataset = PygNodePropPredDataset(root=root, name='ogbn-mag')
 data = dataset[0]
 split_idx = dataset.get_idx_split()
@@ -118,7 +120,8 @@ class RGCNConv(MessagePassing):
                  in_channels,
                  out_channels,
                  num_node_types,
-                 num_edge_types
+                 num_edge_types,
+                 Norm4
                 ):
         super(RGCNConv, self).__init__(aggr='mean')
 
@@ -128,6 +131,7 @@ class RGCNConv(MessagePassing):
         self.num_edge_types = num_edge_types
         self.regcn_like = args.regcn_like
         self.gcn_like = args.gcn_like
+        self.Norm4 = False # Norm4
 
         if self.regcn_like or self.gcn_like:
             self.rel_lins = ModuleList([Linear(in_channels, out_channels, bias=False)])
@@ -143,6 +147,10 @@ class RGCNConv(MessagePassing):
                 Linear(in_channels, out_channels, bias=True)
                 for _ in range(num_node_types)
             ])
+        if self.Norm4:
+            self.msg_norm = ModuleList([MsgNorm(True) for _ in range(num_node_types)])
+            self.layer_norm = ModuleList([torch.nn.LayerNorm(out_channels) for _ in range(num_node_types)])
+
         self.reset_parameters()
 
     def reset_parameters(self):
@@ -152,8 +160,13 @@ class RGCNConv(MessagePassing):
             lin.reset_parameters()
         if self.regcn_like or self.gcn_like:
             torch.nn.init.constant_(self.relation_weight, 1.0 / self.scaling_factor)
+        if self.Norm4:
+            for n in self.msg_norm:
+                n.reset_parameters()
+            for n in self.layer_norm:
+                n.reset_parameters()
 
-    def forward(self, x, edge_index, edge_type, target_node_type):
+    def forward(self, x, edge_index, edge_type, target_node_type, src_node_type):
         x_src, x_target = x
 
         if self.regcn_like or self.gcn_like:
@@ -164,14 +177,22 @@ class RGCNConv(MessagePassing):
 
         for i in range(self.num_edge_types):
             mask = edge_type == i
-            out.add_(self.propagate(edge_index[:, mask], x=x, edge_type=i))
+            if self.Norm4:
+                out.add_(F.normalize(self.propagate(edge_index[:, mask], x=x, edge_type=i, src_node_type = src_node_type)))
+            else:
+                out.add_(self.propagate(edge_index[:, mask], x=x, edge_type=i))
 
         for i in range(self.num_node_types):
             mask = target_node_type == i
-            if self.regcn_like or self.gcn_like:
-                out[mask] += relation_weight[i] * self.root_lins[0](x_target[mask])
+            if self.Norm4:
+                x = self.root_lins[i](x_target[mask])
+                out[mask] = x + self.msg_norm[i](x, out[mask])
+                out[mask] = self.layer_norm[i](out[mask])
             else:
-                out[mask] += self.root_lins[i](x_target[mask])
+                if self.regcn_like or self.gcn_like:
+                    out[mask] += relation_weight[i] * self.root_lins[0](x_target[mask])
+                else:
+                    out[mask] += self.root_lins[i](x_target[mask])
         return out
 
     def message(self, x_j, edge_type: int):
@@ -184,7 +205,7 @@ class RGCNConv(MessagePassing):
 
 class RGCN(torch.nn.Module):
     def __init__(self, in_channels, hidden_channels, out_channels, num_layers,
-                 dropout, num_nodes_dict, x_types, num_edge_types):
+                 dropout, num_nodes_dict, x_types, num_edge_types, Norm4):
         super(RGCN, self).__init__()
 
         self.in_channels = in_channels
@@ -192,6 +213,7 @@ class RGCN(torch.nn.Module):
         self.out_channels = out_channels
         self.num_layers = num_layers
         self.dropout = dropout
+        self.Norm4 = Norm4
 
         self.regcn_like = args.regcn_like
         self.gcn_like = args.gcn_like
@@ -212,10 +234,13 @@ class RGCN(torch.nn.Module):
 
         # Create `num_layers` many message passing layers.
         self.convs = ModuleList()
-        self.convs.append(RGCNConv(I, H, num_node_types, num_edge_types))
+        self.convs.append(RGCNConv(I, H, num_node_types, num_edge_types, self.Norm4))
         for _ in range(num_layers - 2):
-            self.convs.append(RGCNConv(H, H, num_node_types, num_edge_types))
-        self.convs.append(RGCNConv(H, O, num_node_types, num_edge_types))
+            self.convs.append(RGCNConv(H, H, num_node_types, num_edge_types, self.Norm4))
+        self.convs.append(RGCNConv(H, O, num_node_types, num_edge_types, self.Norm4))
+
+        if self.Norm4:
+            self.norm = torch.nn.LayerNorm(I)
 
         self.reset_parameters()
 
@@ -224,6 +249,8 @@ class RGCN(torch.nn.Module):
             torch.nn.init.xavier_uniform_(emb)
         for conv in self.convs:
             conv.reset_parameters()
+        if self.Norm4:
+            self.norm.reset_parameters()
 
     def group_input(self, x_dict, node_type, local_node_idx, n_id=None, device=None):
         # Create global node feature matrix.
@@ -246,13 +273,19 @@ class RGCN(torch.nn.Module):
     def forward(self, n_id, x_dict, adjs, edge_type, node_type, local_node_idx):
 
         x = self.group_input(x_dict, node_type, local_node_idx, n_id, node_type.device)
+
+        if self.Norm4:
+            # x = F.dropout(x, p=0.5, training=self.training)
+            x = self.norm(x)
+
         node_type = node_type[n_id]
 
         for i, (edge_index, e_id, size) in enumerate(adjs):
             x_target = x[:size[1]]  # Target node embeddings.
+            source_node_type = node_type
             node_type = node_type[:size[1]]  # Target node types.
             conv = self.convs[i]
-            x = conv((x, x_target), edge_index, edge_type[e_id], node_type)
+            x = conv((x, x_target), edge_index, edge_type[e_id], node_type, source_node_type)
             if i != self.num_layers - 1:
                 x = F.relu(x)
                 x = F.dropout(x, p=0.5, training=self.training)
@@ -261,6 +294,8 @@ class RGCN(torch.nn.Module):
 
     def inference(self, x_dict, subgraph_loader, edge_type, node_type, local_node_idx, device):
         x_all = self.group_input(x_dict, node_type, local_node_idx, device=torch.device('cpu'))
+        if self.Norm4:
+            x_all = self.norm(x_all.to(device)).to('cpu')
         for layer in range(self.num_layers):
             xs = []
             for batch_size, n_id, adj in subgraph_loader:
@@ -269,7 +304,7 @@ class RGCN(torch.nn.Module):
                 x_target = x[:size[1]]
                 node_type_src = node_type[n_id]
                 node_type_target = node_type_src[:size[1]]
-                x = self.convs[layer]((x, x_target), edge_index, edge_type[e_id], node_type_target)
+                x = self.convs[layer]((x, x_target), edge_index, edge_type[e_id], node_type_target, node_type_src)
                 if layer != self.num_layers - 1:
                     x = F.relu(x)
                 xs.append(x.cpu())
@@ -329,7 +364,7 @@ device = f'cuda:{args.device}' if torch.cuda.is_available() else 'cpu'
 
 model = RGCN(128, args.hidden_channels, dataset.num_classes, args.num_layers,
              args.dropout, num_nodes_dict, list(x_dict.keys()),
-             len(edge_index_dict.keys())).to(device)
+             len(edge_index_dict.keys()), args.Norm4).to(device)
 # sum_p = sum(p.numel() for p in model.parameters())
 # print(sum_p)
 # assert False
@@ -364,6 +399,7 @@ def train(epoch, optimizer):
 
         total_loss += loss.item() * batch_size
         pbar.update(batch_size)
+        # pbar.set_description(f'Vanilla Epoch {epoch:02d}, train acc: {100 * train_acc:.2f}')
 
     pbar.close()
 
