@@ -95,7 +95,7 @@ class REMixHop(nn.Module):
         for l in range(1, self.num_layers):
             h = self.dropout(h)
             h = self.layers[l](self.g, h, e_feat)
-        h = self.fc_layers(h)
+        out = self.fc_layers(h)
 
-        return h
+        return out, h
 
