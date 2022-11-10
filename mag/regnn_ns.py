@@ -16,7 +16,7 @@ from torch_geometric.utils.hetero import group_hetero_graph
 from torch_geometric.nn import MessagePassing
 from utils import weighted_degree, get_self_loop_index, softmax
 from utils import MsgNorm, args_print
-from regnn_layers import REGCNConv, REGATConv
+from regnn_layers import REGCNConv, REGATConv, REGATv2Conv
 
 from ogb.nodeproppred import PygNodePropPredDataset, Evaluator
 
@@ -33,21 +33,22 @@ def set_seed(seed):
 
 set_seed(123)
 
+# torch.set_num_threads(1)
 
 parser = argparse.ArgumentParser(description='OGBN-MAG (REGCN-NS)')
 parser.add_argument('--device', type=int, default=0)
-parser.add_argument('--model', type=str, default='regcn', help='regcn, regat')
+parser.add_argument('--model', type=str, default='regcn', help='regcn, regat, regatv2')
 parser.add_argument('--num_layers', type=int, default=2)
 parser.add_argument('--hidden_channels', type=int, default=128)
 parser.add_argument('--heads', type=int, default=4)
 parser.add_argument('--dropout', type=float, default=0.5)
-parser.add_argument('--lr', type=float, default=0.01)
+parser.add_argument('--lr', type=float, default=0.001)
 parser.add_argument('--weight_decay', type=float, default=0.)
-parser.add_argument('--epochs', type=int, default=3)
+parser.add_argument('--epochs', type=int, default=200)
 parser.add_argument('--runs', type=int, default=10)
 parser.add_argument('--train_batch_size', type=int, default=1024)
 parser.add_argument('--test_batch_size', type=int, default=1024)
-parser.add_argument('-r', '--scaling_factor', type=float, default=100.)
+parser.add_argument('-r', '--scaling_factor', type=float, default=10.)
 parser.add_argument('--feats_type', type=int, default=3,
                     help='Type of the node features used. ' + 
                          '1 - target node features (zero vec for others); ' +
@@ -68,6 +69,8 @@ parser.add_argument('--comments', type=str, default='raw')
 args = parser.parse_args()
 assert args.use_norm in ['non', 'bn', 'ln']
 args_print(args)
+
+init_st = time.time()
 
 home_dir = os.getenv("HOME")
 root = os.path.join(home_dir, "dataset/graph/OGB")
@@ -256,6 +259,12 @@ class REGNN(torch.nn.Module):
             for _ in range(num_layers):
                 self.convs.append(
                     REGATConv(self.hidden_dim, hidden_channels, num_node_types, num_edge_types, heads, scaling_factor , 
+                        dropout=dropout, residual=residual, use_norm=self.use_norm, self_loop_type=args.self_loop_type)
+                )
+        elif args.model == 'regatv2':
+            for _ in range(num_layers):
+                self.convs.append(
+                    REGATv2Conv(self.hidden_dim, hidden_channels, num_node_types, num_edge_types, heads, scaling_factor , 
                         dropout=dropout, residual=residual, use_norm=self.use_norm, self_loop_type=args.self_loop_type)
                 )
         else:
@@ -469,6 +478,7 @@ def test_tmp():
 
     return train_acc, valid_acc, test_acc
 
+print(f"Init time: {time.time()-init_st:.2f}s")
 time_used = []
 # test()  # Test if inference on GPU succeeds.
 for run in range(args.runs):
@@ -488,7 +498,9 @@ for run in range(args.runs):
         scheduler = None
     train_steps = 0
     best_valid_acc = -1.0
+    epoch_times = []
     for epoch in range(1, 1 + args.epochs):
+        epoch_st = time.time()
         loss = train(epoch, optimizer, scheduler, train_steps)
         result = test()
         logger.add_result(run, result)
@@ -496,12 +508,17 @@ for run in range(args.runs):
         if best_valid_acc < valid_acc:
             best_valid_acc = valid_acc
             torch.save(model.state_dict(), save_model_path)
+        epoch_time = time.time() - epoch_st
+        epoch_times.append(epoch_time)
         print(f'Run: {run + 1:02d}, '
               f'Epoch: {epoch:02d}, '
               f'Loss: {loss:.4f}, '
               f'Train: {100 * train_acc:.2f}%, '
               f'Valid: {100 * valid_acc:.2f}%, '
-              f'Test: {100 * test_acc:.2f}%')
+              f'Test: {100 * test_acc:.2f}%'
+              f'Epoch time: {epoch_time:.2f}s')
+    epoch_times = np.array(epoch_times)
+    print(f'Average Epoch Time: {epoch_times.mean():.2f}s ± {epoch_times.std():.2f}')
     time_used.append(time.perf_counter()-st)
     logger.print_statistics(run)
 logger.print_statistics()
