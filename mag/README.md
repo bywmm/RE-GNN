@@ -208,9 +208,11 @@ Highest Valid: 50.60 ± 0.23
    Final Test: 49.54 ± 0.31
 ```
 
-Norm4
-
-
+```
+# feats_type -> 5; self_loop_type -> 2; ln
+# Highest Train: 64.58; Highest Valid: 52.05; Final Train: 63.84; Final Test: 50.91
+python regnn_ns.py --runs 1 --epoch 200 --residual --train_batch_size 512 --test_batch_size 256 --lr 0.001 --hidden 512 --feats_type 5 --scaling_factor 10 --self_loop_type 2 --use_norm ln --comments ft5_sl2_ln_noinput_trueres
+```
 
 ### saint
 

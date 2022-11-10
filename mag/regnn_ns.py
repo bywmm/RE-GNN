@@ -44,7 +44,7 @@ parser.add_argument('--epochs', type=int, default=3)
 parser.add_argument('--runs', type=int, default=10)
 parser.add_argument('--train_batch_size', type=int, default=1024)
 parser.add_argument('--test_batch_size', type=int, default=1024)
-parser.add_argument('--scaling_factor', type=float, default=100.)
+parser.add_argument('-r', '--scaling_factor', type=float, default=100.)
 parser.add_argument('--feats_type', type=int, default=3,
                     help='Type of the node features used. ' + 
                          '1 - target node features (zero vec for others); ' +
@@ -53,19 +53,20 @@ parser.add_argument('--feats_type', type=int, default=3,
                          '4 - target node features (Complex emb for others);' + 
                          '? - all id vec.'
                     ) # Note that OGBN-MAG only has target node features.
-parser.add_argument('--use_bn', action='store_true', default=False)
 parser.add_argument('--residual', action='store_true', default=False)
 parser.add_argument('--gcn', action='store_true', default=False)
-parser.add_argument('--Norm4', action='store_true', default=False)
+parser.add_argument('--use_norm', type=str, default='ln', help='non, bn, or ln')
 parser.add_argument('--self_loop_type', type=int, default=1,
                     help='1 - add self-loop connections and then sample it as edges;' + 
                          '2 - sample nodes and then add self-loop')
 parser.add_argument('--comments', type=str, default='raw')
 
 args = parser.parse_args()
+assert args.use_norm in ['non', 'bn', 'ln']
 args_print(args)
 
-root = '/irip/wangjunfu_2021/dataset/graph/OGB'
+home_dir = os.getenv("HOME")
+root = os.path.join(home_dir, "dataset/graph/OGB")
 dataset = PygNodePropPredDataset(root=root, name='ogbn-mag')
 data = dataset[0]
 split_idx = dataset.get_idx_split()
@@ -214,7 +215,7 @@ class REGCNConv(MessagePassing):
                  dropout=0., 
                  use_softmax=False,
                  residual=False,
-                 Norm4=False
+                 use_norm=None
                 ):
         super(REGCNConv, self).__init__(aggr='mean')
 
@@ -225,11 +226,12 @@ class REGCNConv(MessagePassing):
         self.use_softmax = use_softmax
         self.dropout = dropout
         self.residual = residual
-        self.Norm4 = Norm4
+        self.use_norm = use_norm
 
         self.weight = Parameter(torch.Tensor(in_channels, out_channels))
         if self.residual:
-            self.weight_root = Parameter(torch.Tensor(in_channels, out_channels))
+            self.weight_root = self.weight # Parameter(torch.Tensor(in_channels, out_channels))
+            # self.weight_root = Parameter(torch.Tensor(in_channels, out_channels))
         self.bias = Parameter(torch.Tensor(out_channels))
         if args.self_loop_type in [1, 3]:
             rw_dim = self.num_edge_types
@@ -241,8 +243,10 @@ class REGCNConv(MessagePassing):
             self.relation_weight = Parameter(torch.Tensor(rw_dim), requires_grad=True)
         self.scaling_factor = scaling_factor
 
-        if self.Norm4:
-            self.layer_norm = torch.nn.LayerNorm(out_channels)
+        if self.use_norm  == 'bn':
+            self.norm = torch.nn.BatchNorm1d(out_channels)
+        elif self.use_norm == 'ln':
+            self.norm = torch.nn.LayerNorm(out_channels)
 
         self.reset_parameters()
 
@@ -252,8 +256,8 @@ class REGCNConv(MessagePassing):
             init.xavier_uniform_(self.weight_root)
         init.zeros_(self.bias)
         init.constant_(self.relation_weight, 1.0 / self.scaling_factor)
-        if self.Norm4:
-            self.layer_norm.reset_parameters()
+        if self.use_norm in ['bn', 'ln']:
+            self.norm.reset_parameters()
 
     def forward(self, x, edge_index, edge_type, target_node_type, return_weights=False):
         # shape of x: [N, in_channels]
@@ -309,8 +313,8 @@ class REGCNConv(MessagePassing):
         if self.residual:
             out += x_target
         
-        if self.Norm4:
-            out = self.layer_norm(out)
+        if self.use_norm in ['bn', 'ln']:
+            out = self.norm(out)
 
         if return_weights:
             return out, ew, relation_weight
@@ -330,7 +334,7 @@ class REGCNConv(MessagePassing):
 
 class REGCN(torch.nn.Module):
     def __init__(self, in_channels, hidden_channels, out_channels, num_layers, scaling_factor,
-                 dropout, num_feature_dict, num_edge_types, use_bn, residual, gcn, Norm4):
+                 dropout, num_feature_dict, num_edge_types, residual, gcn, use_norm=None):
         super(REGCN, self).__init__()
 
         self.in_channels = in_channels
@@ -338,9 +342,8 @@ class REGCN(torch.nn.Module):
         self.out_channels = out_channels
         self.num_layers = num_layers
         self.dropout = dropout
-        self.use_bn = use_bn
         self.residual = residual
-        self.Norm4 = Norm4
+        self.use_norm = use_norm
 
         node_types = list(num_feature_dict.keys())
         num_node_types = len(node_types)
@@ -362,17 +365,21 @@ class REGCN(torch.nn.Module):
 
         # REGNNConv
         self.convs = ModuleList()
-        self.convs.append(REGCNConv(hidden_channels, hidden_channels, num_node_types, num_edge_types, scaling_factor, gcn, Norm4=self.Norm4))
+        self.convs.append(
+            REGCNConv(hidden_channels, hidden_channels, num_node_types, num_edge_types, scaling_factor, gcn,
+                dropout=dropout, residual=residual, use_norm=self.use_norm)
+        )
         for _ in range(num_layers - 1):
-            self.convs.append(REGCNConv(hidden_channels, hidden_channels, num_node_types, num_edge_types, scaling_factor, gcn, Norm4=self.Norm4))
+            self.convs.append(
+                REGCNConv(hidden_channels, hidden_channels, num_node_types, num_edge_types, scaling_factor, gcn, 
+                    dropout=dropout, residual=residual, use_norm=self.use_norm)
+            )
         # self.convs.append(REGCNConv(hidden_channels, out_channels, num_node_types, num_edge_types, scaling_factor, gcn))
         self.out_lin = Linear(hidden_channels, out_channels)
-        if self.Norm4:
+        if self.use_norm  == 'bn':
+            self.norm = torch.nn.BatchNorm1d(hidden_channels)
+        elif self.use_norm == 'ln':
             self.norm = torch.nn.LayerNorm(hidden_channels)
-
-        self.bns = ModuleList()
-        for _ in range(num_layers):
-            self.bns.append(torch.nn.BatchNorm1d(self.hidden_channels))
 
         self.reset_parameters()
 
@@ -386,10 +393,10 @@ class REGCN(torch.nn.Module):
                 lin.reset_parameters()
         for conv in self.convs:
             conv.reset_parameters()
-        for bn in self.bns:
-            bn.reset_parameters()
+        # for bn in self.bns:
+        #     bn.reset_parameters()
         self.out_lin.reset_parameters()
-        if self.Norm4:
+        if self.use_norm in ['bn', 'ln']:
             self.norm.reset_parameters()
 
     def group_input(self, x_dict, node_type, local_node_idx, n_id=None, device=None):
@@ -424,8 +431,8 @@ class REGCN(torch.nn.Module):
 
         x = self.group_input(x_dict, node_type, local_node_idx, n_id, node_type.device)
         node_type = node_type[n_id]
-        if self.Norm4:
-            x = self.norm(x)
+        # if self.use_norm in ['bn', 'ln']:
+        #     x = self.norm(x)
 
         # x = F.dropout(x, p=self.dropout, training=self.training)
 
@@ -434,21 +441,16 @@ class REGCN(torch.nn.Module):
             node_type = node_type[:size[1]]  # Target node types.
             conv = self.convs[i]
             x = conv((x, x_target), edge_index, edge_type[e_id], node_type)
-            if i != self.num_layers : # - 1:
-                if self.residual:
-                    x = x + x_target
-                if self.use_bn:
-                    x = self.bns[i](x)
-                x = F.relu(x)
-                x = F.dropout(x, p=self.dropout, training=self.training)
+            x = F.relu(x)
+            x = F.dropout(x, p=self.dropout, training=self.training)
         x = self.out_lin(x)
 
         return x.log_softmax(dim=-1)
         
     def inference(self, x_dict, subgraph_loader, edge_type, node_type, local_node_idx, device):
         x_all = self.group_input(x_dict, node_type, local_node_idx, device=torch.device('cpu'))
-        if self.Norm4:
-            x_all = self.norm(x_all.to(device)).to('cpu')
+        # if self.use_norm in ['bn', 'ln']:
+        #     x_all = self.norm(x_all.to(device)).to('cpu')
 
         for layer in range(self.num_layers):
             xs = []
@@ -459,12 +461,7 @@ class REGCN(torch.nn.Module):
                 node_type_src = node_type[n_id]
                 node_type_target = node_type_src[:size[1]]
                 x = self.convs[layer]((x, x_target), edge_index, edge_type[e_id], node_type_target)
-                if layer != self.num_layers:
-                    if self.residual:
-                        x = x + x_target
-                    if self.use_bn:
-                        x = self.bns[layer](x)
-                    x = F.relu(x)
+                x = F.relu(x)
                 xs.append(x.cpu())
 
             x_all = torch.cat(xs, dim=0)
@@ -477,11 +474,10 @@ class REGCN(torch.nn.Module):
 device = f'cuda:{args.device}' if torch.cuda.is_available() else 'cpu'
 
 model = REGCN(128, args.hidden_channels, dataset.num_classes, args.num_layers, args.scaling_factor,
-             args.dropout, num_feature_dict, len(edge_index_dict.keys()), args.use_bn, args.residual, args.gcn, args.Norm4).to(device)
+             args.dropout, num_feature_dict, len(edge_index_dict.keys()), args.residual, args.gcn, args.use_norm).to(device)
 
 sum_p = sum(p.numel() for p in model.parameters())
 print("Num params:", sum_p)
-# assert False
 
 # Create global label vector.
 y_global = node_type.new_full((node_type.size(0), 1), -1)
