@@ -59,6 +59,7 @@ parser.add_argument('--use_norm', type=str, default='ln', help='non, bn, or ln')
 parser.add_argument('--self_loop_type', type=int, default=1,
                     help='1 - add self-loop connections and then sample it as edges;' + 
                          '2 - sample nodes and then add self-loop')
+parser.add_argument('--use_scheduler', action='store_true')
 parser.add_argument('--comments', type=str, default='raw')
 
 args = parser.parse_args()
@@ -491,7 +492,7 @@ local_node_idx = local_node_idx.to(device)
 y_global = y_global.to(device)
 
 
-def train(epoch, optimizer):
+def train(epoch, optimizer, scheduler, train_steps):
     model.train()
 
     # pbar = tqdm(total=paper_train_idx.size(0))
@@ -509,6 +510,10 @@ def train(epoch, optimizer):
         optimizer.step()
 
         total_loss += loss.item() * batch_size
+        train_steps += 1
+        if scheduler is not None:
+            # scheduler.step(train_steps)
+            scheduler.step()
         # pbar.update(batch_size)
 
     # pbar.close()
@@ -590,9 +595,15 @@ for run in range(args.runs):
     st = time.perf_counter()
     model.reset_parameters()
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+    steps_per_epoch=len(train_loader)
+    if args.use_scheduler:
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=steps_per_epoch * args.epochs, eta_min=args.lr / 100)
+    else:
+        scheduler = None
+    train_steps = 0
     best_valid_acc = -1.0
     for epoch in range(1, 1 + args.epochs):
-        loss = train(epoch, optimizer)
+        loss = train(epoch, optimizer, scheduler, train_steps)
         result = test()
         logger.add_result(run, result)
         train_acc, valid_acc, test_acc = result

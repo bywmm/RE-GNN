@@ -46,6 +46,7 @@ parser.add_argument('--scaling_factor', type=float, default=100.)
 parser.add_argument('--gcn_like', action='store_true')
 parser.add_argument('--subgraph_test', action='store_true')
 parser.add_argument('--Norm4', action='store_true')
+parser.add_argument('--use_scheduler', action='store_true')
 args = parser.parse_args()
 args_print(args)
 
@@ -380,7 +381,7 @@ local_node_idx = local_node_idx.to(device)
 y_global = y_global.to(device)
 
 
-def train(epoch, optimizer):
+def train(epoch, optimizer, scheduler, train_steps):
     model.train()
 
     pbar = tqdm(total=paper_train_idx.size(0))
@@ -398,6 +399,9 @@ def train(epoch, optimizer):
         optimizer.step()
 
         total_loss += loss.item() * batch_size
+        train_steps += 1
+        if scheduler is not None:
+            scheduler.step(train_steps)
         pbar.update(batch_size)
         # pbar.set_description(f'Vanilla Epoch {epoch:02d}, train acc: {100 * train_acc:.2f}')
 
@@ -466,8 +470,14 @@ for run in range(args.runs):
     st = time.perf_counter()
     model.reset_parameters()
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
+    steps_per_epoch=len(train_loader)
+    if args.use_scheduler:
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=steps_per_epoch * args.epochs, eta_min=args.lr / 100)
+    else:
+        scheduler = None
+    train_steps = 0
     for epoch in range(1, 1 + args.epochs):
-        loss = train(epoch, optimizer)
+        loss = train(epoch, optimizer, scheduler, train_steps)
         result = test()
         logger.add_result(run, result)
         train_acc, valid_acc, test_acc = result
