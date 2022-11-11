@@ -16,6 +16,7 @@ from torch_geometric.utils.hetero import group_hetero_graph
 from torch_geometric.nn import MessagePassing
 from utils import weighted_degree, get_self_loop_index, softmax
 from utils import MsgNorm, args_print
+from early_stopping import EarlyStopping
 from regnn_layers import REGCNConv, REGATConv, REGATv2Conv
 
 from ogb.nodeproppred import PygNodePropPredDataset, Evaluator
@@ -45,6 +46,7 @@ parser.add_argument('--dropout', type=float, default=0.5)
 parser.add_argument('--lr', type=float, default=0.001)
 parser.add_argument('--weight_decay', type=float, default=0.)
 parser.add_argument('--epochs', type=int, default=200)
+parser.add_argument('--early_stop', type=int, default=50)
 parser.add_argument('--runs', type=int, default=10)
 parser.add_argument('--train_batch_size', type=int, default=1024)
 parser.add_argument('--test_batch_size', type=int, default=1024)
@@ -203,13 +205,13 @@ elif args.num_layers == 4:
     tr_size = [20, 15, 10, 10]   # batch_size 32
 train_loader = NeighborSampler(edge_index, node_idx=paper_train_idx,
                                sizes=tr_size, batch_size=args.train_batch_size, shuffle=True,
-                               num_workers=8)
+                               num_workers=4)
 test_loader = NeighborSampler(edge_index, node_idx=paper_idx,
                                sizes=tr_size, batch_size=args.test_batch_size, shuffle=False,
-                               num_workers=8)
+                               num_workers=4)
 subgraph_loader = NeighborSampler(edge_index, node_idx=None, 
                                sizes=[-1], batch_size=args.test_batch_size, shuffle=False,
-                               num_workers=8)
+                               num_workers=4)
 
 class REGNN(torch.nn.Module):
     def __init__(self, in_channels, hidden_channels, out_channels, heads, num_layers, scaling_factor,
@@ -499,6 +501,7 @@ for run in range(args.runs):
     train_steps = 0
     best_valid_acc = -1.0
     epoch_times = []
+    es = EarlyStopping(args.early_stop)
     for epoch in range(1, 1 + args.epochs):
         epoch_st = time.time()
         loss = train(epoch, optimizer, scheduler, train_steps)
@@ -508,6 +511,9 @@ for run in range(args.runs):
         if best_valid_acc < valid_acc:
             best_valid_acc = valid_acc
             torch.save(model.state_dict(), save_model_path)
+        es(valid_acc)
+        if es.early_stop:
+            break
         epoch_time = time.time() - epoch_st
         epoch_times.append(epoch_time)
         print(f'Run: {run + 1:02d}, '
@@ -515,8 +521,9 @@ for run in range(args.runs):
               f'Loss: {loss:.4f}, '
               f'Train: {100 * train_acc:.2f}%, '
               f'Valid: {100 * valid_acc:.2f}%, '
-              f'Test: {100 * test_acc:.2f}%'
+              f'Test: {100 * test_acc:.2f}%, '
               f'Epoch time: {epoch_time:.2f}s')
+        
     epoch_times = np.array(epoch_times)
     print(f'Average Epoch Time: {epoch_times.mean():.2f}s ± {epoch_times.std():.2f}')
     time_used.append(time.perf_counter()-st)

@@ -221,3 +221,44 @@ subgraph test
 
 + metapath2vec embedding: 48.54
 + 256 hidden: 49+
+
+
+### CPU速度
+
+CPU: 4
+Num params: 1037171
+Init time: 54.08s
+Run: 01, Epoch: 01, Loss: 2.5225, Train: 40.49%, Valid: 37.85%, Test: 38.02%Epoch time: 484.64s
+Run: 01, Epoch: 02, Loss: 2.1945, Train: 44.40%, Valid: 42.86%, Test: 42.93%Epoch time: 431.22s
+Run: 01, Epoch: 03, Loss: 2.0706, Train: 47.17%, Valid: 44.83%, Test: 44.45%Epoch time: 429.40s
+Average Epoch Time: 448.42s ± 25.62
+Run 01:                                                                                          
+Highest Train: 47.17
+Highest Valid: 44.83
+  Final Train: 47.17
+   Final Test: 44.45
+All runs:
+Highest Train: 47.17 ± nan
+Highest Valid: 44.83 ± nan
+  Final Train: 47.17 ± nan
+   Final Test: 44.45 ± nan
+time used: tensor(1345.2740) tensor(nan)
+
+12
+Num params: 1037171
+Init time: 52.15s
+Run: 01, Epoch: 01, Loss: 2.5228, Train: 40.52%, Valid: 37.56%, Test: 37.78%Epoch time: 376.65s
+Run: 01, Epoch: 02, Loss: 2.1926, Train: 44.34%, Valid: 42.48%, Test: 42.61%Epoch time: 509.91s
+Run: 01, Epoch: 03, Loss: 2.0668, Train: 47.43%, Valid: 45.07%, Test: 44.82%Epoch time: 614.69s
+Average Epoch Time: 500.42s ± 97.41
+Run 01:
+Highest Train: 47.43
+Highest Valid: 45.07
+  Final Train: 47.43
+   Final Test: 44.82
+All runs:
+Highest Train: 47.43 ± nan
+Highest Valid: 45.07 ± nan
+  Final Train: 47.43 ± nan
+   Final Test: 44.82 ± nan
+time used: tensor(1501.2620) tensor(nan)
