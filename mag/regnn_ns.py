@@ -34,24 +34,24 @@ def set_seed(seed):
 
 set_seed(123)
 
-# torch.set_num_threads(1)
+torch.set_num_threads(5)
 
 parser = argparse.ArgumentParser(description='OGBN-MAG (REGCN-NS)')
 parser.add_argument('--device', type=int, default=0)
 parser.add_argument('--model', type=str, default='regcn', help='regcn, regat, regatv2')
 parser.add_argument('--num_layers', type=int, default=2)
-parser.add_argument('--hidden_channels', type=int, default=128)
-parser.add_argument('--heads', type=int, default=4)
+parser.add_argument('--hidden_channels', type=int, default=512)
+parser.add_argument('--heads', type=int, default=8)
 parser.add_argument('--dropout', type=float, default=0.5)
 parser.add_argument('--lr', type=float, default=0.001)
 parser.add_argument('--weight_decay', type=float, default=0.)
 parser.add_argument('--epochs', type=int, default=200)
 parser.add_argument('--early_stop', type=int, default=50)
 parser.add_argument('--runs', type=int, default=10)
-parser.add_argument('--train_batch_size', type=int, default=1024)
-parser.add_argument('--test_batch_size', type=int, default=1024)
+parser.add_argument('--train_batch_size', type=int, default=512)
+parser.add_argument('--test_batch_size', type=int, default=256)
 parser.add_argument('-r', '--scaling_factor', type=float, default=10.)
-parser.add_argument('--feats_type', type=int, default=3,
+parser.add_argument('--feats_type', type=int, default=5,
                     help='Type of the node features used. ' + 
                          '1 - target node features (zero vec for others); ' +
                          '2 - target node features (id vec for others); ' +
@@ -60,9 +60,9 @@ parser.add_argument('--feats_type', type=int, default=3,
                          '? - all id vec.'
                     ) # Note that OGBN-MAG only has target node features.
 parser.add_argument('--residual', action='store_true', default=False)
-parser.add_argument('--gcn', action='store_true', default=False)
+parser.add_argument('--no_re', action='store_true', default=False)
 parser.add_argument('--use_norm', type=str, default='ln', help='non, bn, or ln')
-parser.add_argument('--self_loop_type', type=int, default=1,
+parser.add_argument('--self_loop_type', type=int, default=2,
                     help='1 - add self-loop connections and then sample it as edges;' + 
                          '2 - sample nodes and then add self-loop')
 parser.add_argument('--use_scheduler', action='store_true')
@@ -215,7 +215,7 @@ subgraph_loader = NeighborSampler(edge_index, node_idx=None,
 
 class REGNN(torch.nn.Module):
     def __init__(self, in_channels, hidden_channels, out_channels, heads, num_layers, scaling_factor,
-                 dropout, num_feature_dict, num_edge_types, residual, gcn, use_norm=None):
+                 dropout, num_feature_dict, num_edge_types, residual, no_re, use_norm=None):
         super(REGNN, self).__init__()
 
         self.in_channels = in_channels
@@ -254,20 +254,20 @@ class REGNN(torch.nn.Module):
         if args.model == 'regcn':
             for _ in range(num_layers):
                 self.convs.append(
-                    REGCNConv(hidden_channels, hidden_channels, num_node_types, num_edge_types, scaling_factor, gcn, 
-                        dropout=dropout, residual=residual, use_norm=self.use_norm, self_loop_type=args.self_loop_type)
+                    REGCNConv(hidden_channels, hidden_channels, num_node_types, num_edge_types, scaling_factor, 
+                        dropout=dropout, residual=residual, use_norm=self.use_norm, self_loop_type=args.self_loop_type, no_re=args.no_re)
                 )
         elif args.model == 'regat':
             for _ in range(num_layers):
                 self.convs.append(
                     REGATConv(self.hidden_dim, hidden_channels, num_node_types, num_edge_types, heads, scaling_factor , 
-                        dropout=dropout, residual=residual, use_norm=self.use_norm, self_loop_type=args.self_loop_type)
+                        dropout=dropout, residual=residual, use_norm=self.use_norm, self_loop_type=args.self_loop_type, no_re=args.no_re)
                 )
         elif args.model == 'regatv2':
             for _ in range(num_layers):
                 self.convs.append(
                     REGATv2Conv(self.hidden_dim, hidden_channels, num_node_types, num_edge_types, heads, scaling_factor , 
-                        dropout=dropout, residual=residual, use_norm=self.use_norm, self_loop_type=args.self_loop_type)
+                        dropout=dropout, residual=residual, use_norm=self.use_norm, self_loop_type=args.self_loop_type, no_re=args.no_re)
                 )
         else:
             raise NotImplementedError
@@ -372,7 +372,7 @@ class REGNN(torch.nn.Module):
 device = f'cuda:{args.device}' if torch.cuda.is_available() else 'cpu'
 
 model = REGNN(128, args.hidden_channels, dataset.num_classes, args.heads, args.num_layers, args.scaling_factor,
-             args.dropout, num_feature_dict, len(edge_index_dict.keys()), args.residual, args.gcn, args.use_norm).to(device)
+             args.dropout, num_feature_dict, len(edge_index_dict.keys()), args.residual, args.no_re, args.use_norm).to(device)
 
 sum_p = sum(p.numel() for p in model.parameters())
 print("Num params:", sum_p)

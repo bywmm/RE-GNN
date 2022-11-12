@@ -28,13 +28,12 @@ class REGCNConv(MessagePassing):
                  num_node_types,
                  num_edge_types,
                  scaling_factor=100.,
-                 gcn=False,
                  dropout=0., 
                  use_softmax=False,
                  residual=False,
                  use_norm=None,
-                 self_loop_type=1
-                ):
+                 self_loop_type=1,
+                 no_re=False):
         super(REGCNConv, self).__init__(aggr='mean')
 
         self.in_channels = in_channels
@@ -56,7 +55,7 @@ class REGCNConv(MessagePassing):
             rw_dim = self.num_edge_types
         else:
             rw_dim = self.num_edge_types + num_node_types
-        if gcn:
+        if no_re:
             self.relation_weight = Parameter(torch.Tensor(rw_dim), requires_grad=False)
         else:
             self.relation_weight = Parameter(torch.Tensor(rw_dim), requires_grad=True)
@@ -164,7 +163,8 @@ class REGATConv(MessagePassing):
                  dropout = 0.0,
                  residual=False,
                  use_norm=None,
-                 self_loop_type=1):
+                 self_loop_type=1,
+                 no_re=False):
         super(REGATConv, self).__init__(node_dim=0, aggr='add')
     
         self.in_channels = in_channels
@@ -191,7 +191,10 @@ class REGATConv(MessagePassing):
         else:
             rw_dim = self.num_edge_types + num_node_types
         
-        self.relation_weight = Parameter(torch.Tensor(rw_dim, heads), requires_grad=True)
+        if no_re:
+            self.relation_weight = Parameter(torch.Tensor(rw_dim, heads), requires_grad=False)
+        else:
+            self.relation_weight = Parameter(torch.Tensor(rw_dim, heads), requires_grad=True)
         self.scaling_factor = scaling_factor
 
         # The learnable parameters to compute attention coefficients:
@@ -305,7 +308,8 @@ class REGATv2Conv(MessagePassing):
                  dropout = 0.0,
                  residual=False,
                  use_norm=None,
-                 self_loop_type=1):
+                 self_loop_type=1,
+                 no_re=False):
         super(REGATv2Conv, self).__init__(node_dim=0, aggr='add')
 
         self.in_channels = in_channels
@@ -332,7 +336,10 @@ class REGATv2Conv(MessagePassing):
         else:
             rw_dim = self.num_edge_types + num_node_types
         
-        self.relation_weight = Parameter(torch.Tensor(rw_dim, heads), requires_grad=True)
+        if no_re:
+            self.relation_weight = Parameter(torch.Tensor(rw_dim, heads), requires_grad=False)
+        else:
+            self.relation_weight = Parameter(torch.Tensor(rw_dim, heads), requires_grad=True)
         self.scaling_factor = scaling_factor
 
         # The learnable parameters to compute attention coefficients:
