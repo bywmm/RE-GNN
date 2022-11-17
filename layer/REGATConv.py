@@ -63,14 +63,14 @@ class REGATConv(nn.Module):
 
     def forward(self, graph, feat, edge_feats=None):
         graph = graph.local_var()
-        h = feat
+        h = self.feat_drop(feat)
         feat = self.fc(h).view(-1, self.num_heads, self.out_feats)
         el = (feat * self.attn_l).sum(dim=-1).unsqueeze(-1)
         er = (feat * self.attn_r).sum(dim=-1).unsqueeze(-1)
 
         if edge_feats is not None:
             edge_weight = self.edge_weight * self.alpha
-            # edge_weight[6:] = 1.0
+            # edge_weight[:6] = 1.0
             edge_weight = nn.LeakyReLU()(edge_weight)
             ee = edge_weight[edge_feats - 1]
             graph.edata.update({'ee': ee})

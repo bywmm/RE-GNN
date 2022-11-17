@@ -3,7 +3,7 @@ dataset=$2
 ft=$3
 gnn=$4
 
-heads_lst=(8)
+heads_lst=(4)
 hidden_channels_lst=(64)
 n_layers_lst=(4)
 
@@ -13,7 +13,7 @@ weight_decay_lst=(0. 0.0005 0.001 0.005)
 
 dropout_lst=(0.2 0.5 0.7)
 
-R_list=(10. )
+R_list=(10. 100.)
 
 for n_layer in "${n_layers_lst[@]}"; do
 	for head in "${heads_lst[@]}"; do
