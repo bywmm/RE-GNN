@@ -1,7 +1,8 @@
 import torch
 from torch import Tensor
+import torch.nn.functional as F
 from torch_scatter import scatter, segment_csr, gather_csr
-
+from texttable import Texttable
 
 def maybe_num_nodes(edge_index, num_nodes=None):
     if num_nodes is not None:
@@ -54,3 +55,28 @@ def softmax(src: Tensor, index, ptr=None,
         raise NotImplementedError
 
     return out / (out_sum + 1e-16)
+
+class MsgNorm(torch.nn.Module):
+    def __init__(self, learn_msg_scale=False):
+        super(MsgNorm, self).__init__()
+
+        self.msg_scale = torch.nn.Parameter(torch.Tensor([1.0]),
+                                            requires_grad=learn_msg_scale)
+        self.reset_parameters()
+
+    def forward(self, x, msg, p=2):
+        msg = F.normalize(msg, p=p, dim=1)
+        x_norm = x.norm(p=p, dim=1, keepdim=True)
+        msg = msg * x_norm * self.msg_scale
+        return msg
+
+    def reset_parameters(self):
+        torch.nn.init.ones_(self.msg_scale)
+
+def args_print(args):
+    _dict = vars(args)
+    t = Texttable()
+    t.add_row(["Parameter", "Value"])
+    for k in _dict:
+        t.add_row([k, _dict[k]])
+    print(t.draw())

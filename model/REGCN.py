@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from layer import REGraphConv
+from layer import REGraphConv, RESAGEConv
 
 
 class REGCN(nn.Module):
@@ -14,7 +14,8 @@ class REGCN(nn.Module):
                  n_layers,
                  activation,
                  dropout,
-                 feats_dim_list):
+                 feats_dim_list,
+                 use_sage=False):
         super(REGCN, self).__init__()
         self.g = g
         self.num_layers = n_layers
@@ -23,13 +24,12 @@ class REGCN(nn.Module):
             nn.init.xavier_normal_(fc.weight, gain=1.414)
 
         self.layers = nn.ModuleList()
-        # input layer
-        self.layers.append(REGraphConv(num_etypes, R, in_feats, n_hidden, bias=False, activation=None, dropout=dropout, weight=False))
-        # hidden layers
-        for i in range(n_layers - 1):
-            self.layers.append(REGraphConv(num_etypes, R, n_hidden, n_hidden, activation=activation, dropout=dropout))
-        # output layer
-        self.layers.append(REGraphConv(num_etypes, R, n_hidden, n_classes, dropout=dropout))
+        GConv = RESAGEConv if use_sage else REGraphConv
+        self.layers.append(GConv(num_etypes, R, in_feats, n_hidden, bias=False, activation=None, dropout=dropout, weight=False))
+        for i in range(1, n_layers - 1):
+            self.layers.append(GConv(num_etypes, R, n_hidden, n_hidden, activation=activation, dropout=dropout))
+        self.layers.append(GConv(num_etypes, R, n_hidden, n_classes, bias=False, dropout=dropout, weight=False))
+        self.out_lin = nn.Linear(n_hidden, n_classes, bias=True)
         self.dropout = nn.Dropout(p=dropout)
 
     def forward(self, features_list, e_feat):
@@ -39,7 +39,8 @@ class REGCN(nn.Module):
         h = torch.cat(h, 0)
         h = self.layers[0](self.g, h, e_feat)
 
-        for l in range(1, self.num_layers+1):
+        for l in range(1, self.num_layers):
             h = self.dropout(h)
             h = self.layers[l](self.g, h, e_feat)
-        return h
+        out = self.out_lin(h)
+        return out, h

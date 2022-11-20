@@ -1,1 +1,1 @@
-python run_regnn.py --dataset ACM --model regat --save-postfix ACM-regat --feats-type 2 --repeat 5 --device $1
+python run_regnn.py --dataset ACM --model regat --save_postfix ACM-regat --feats_type 2 --hidden 16 --weight_decay 0.005 --dropout 0.2 --repeat 10 --device $1

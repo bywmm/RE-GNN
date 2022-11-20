@@ -4,7 +4,6 @@ from torch.nn import init
 
 from dgl import function as fn
 
-
 class REGraphConv(nn.Module):
     def __init__(self,
                  num_etypes,
@@ -50,7 +49,7 @@ class REGraphConv(nn.Module):
         
         init.constant_(self.edge_weight, 1.0 / self.alpha)
 
-    def forward(self, graph, feat, e_feat):
+    def forward(self, graph, feat, e_feat, return_embedding=False):
 
         graph = graph.local_var()
 
@@ -62,7 +61,7 @@ class REGraphConv(nn.Module):
         ew = edge_weight[e_feat-1]
         # ew = self.ew_dropout(ew)
         graph.edata.update({'ew': ew})
-        # print(self.edge_weight, self.weight.shape)
+        # print(edge_weight.reshape(-1))
 
         if self.norm:
             num_nodes = graph.num_nodes()

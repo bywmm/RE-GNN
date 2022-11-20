@@ -1,1 +1,1 @@
-python run_regnn.py --dataset IMDB --model regat --save-postfix IMDB-regat --weight_decay 0.005 --num_heads 1 --hidden-dim 128 --repeat 5 --device $1
+python run_regnn.py --dataset IMDB --model regat --feats_type 1 --save_postfix IMDB-regat --weight_decay 0.005 --dropout 0.5 --repeat 10 --device $1

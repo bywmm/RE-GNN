@@ -8,7 +8,7 @@ import torch.nn.functional as F
 from torch.nn import ModuleList, Linear, ParameterDict, Parameter
 from torch_sparse import SparseTensor
 from torch_geometric.utils import to_undirected
-from torch_geometric.data import Data, GraphSAINTRandomWalkSampler
+from torch_geometric.data import Data, GraphSAINTRandomWalkSampler, NeighborSampler
 from torch_geometric.utils.hetero import group_hetero_graph
 from torch_geometric.nn import MessagePassing
 
@@ -25,8 +25,10 @@ parser.add_argument('--lr', type=float, default=0.005)
 parser.add_argument('--epochs', type=int, default=30)
 parser.add_argument('--runs', type=int, default=10)
 parser.add_argument('--batch_size', type=int, default=20000)
+parser.add_argument('--test_batch_size', type=int, default=1024)
 parser.add_argument('--walk_length', type=int, default=2)
 parser.add_argument('--num_steps', type=int, default=30)
+parser.add_argument('--subgraph_test', action='store_true')
 args = parser.parse_args()
 print(args)
 
@@ -90,7 +92,9 @@ train_loader = GraphSAINTRandomWalkSampler(homo_data,
                                            num_steps=args.num_steps,
                                            sample_coverage=0,
                                            save_dir=dataset.processed_dir)
-
+subgraph_loader = NeighborSampler(edge_index, node_idx=None,
+                               sizes=[-1], batch_size=args.test_batch_size, shuffle=False,
+                               num_workers=12)
 # Map informations to their canonical type.
 x_dict = {}
 for key, x in data.x_dict.items():
@@ -130,7 +134,12 @@ class RGCNConv(MessagePassing):
             lin.reset_parameters()
 
     def forward(self, x, edge_index, edge_type, node_type):
-        out = x.new_zeros(x.size(0), self.out_channels)
+        if not isinstance(x, tuple):
+           x = (x, x)
+        x_src, x_target = x
+
+        out = x_target.new_zeros(x_target.size(0), self.out_channels)
+        # out = x.new_zeros(x.size(0), self.out_channels)
 
         for i in range(self.num_edge_types):
             mask = edge_type == i
@@ -138,7 +147,7 @@ class RGCNConv(MessagePassing):
 
         for i in range(self.num_node_types):
             mask = node_type == i
-            out[mask] += self.root_lins[i](x[mask])
+            out[mask] += self.root_lins[i](x_target[mask])
 
         return out
 
@@ -186,25 +195,43 @@ class RGCN(torch.nn.Module):
         for conv in self.convs:
             conv.reset_parameters()
 
-    def group_input(self, x_dict, node_type, local_node_idx):
+    # def group_input(self, x_dict, node_type, local_node_idx):
+    #     # Create global node feature matrix.
+    #     h = torch.zeros((node_type.size(0), self.in_channels),
+    #                     device=node_type.device)
+
+    #     for key, x in x_dict.items():
+    #         mask = node_type == key
+    #         h[mask] = x[local_node_idx[mask]]
+
+    #     for key, emb in self.emb_dict.items():
+    #         mask = node_type == int(key)
+    #         h[mask] = emb[local_node_idx[mask]]
+
+    #     return h
+    
+    def group_input(self, x_dict, node_type, local_node_idx, n_id=None, device=None):
         # Create global node feature matrix.
+        if n_id is not None:
+            node_type = node_type[n_id]
+            local_node_idx = local_node_idx[n_id]
+
         h = torch.zeros((node_type.size(0), self.in_channels),
-                        device=node_type.device)
+                        device=device)
 
         for key, x in x_dict.items():
             mask = node_type == key
-            h[mask] = x[local_node_idx[mask]]
-
+            h[mask] = x[local_node_idx[mask]].to(device)
         for key, emb in self.emb_dict.items():
             mask = node_type == int(key)
-            h[mask] = emb[local_node_idx[mask]]
+            h[mask] = emb[local_node_idx[mask]].to(device)
 
         return h
 
     def forward(self, x_dict, edge_index, edge_type, node_type,
                 local_node_idx):
 
-        x = self.group_input(x_dict, node_type, local_node_idx)
+        x = self.group_input(x_dict, node_type, local_node_idx, device=node_type.device)
 
         for i, conv in enumerate(self.convs):
             x = conv(x, edge_index, edge_type, node_type)
@@ -246,6 +273,25 @@ class RGCN(torch.nn.Module):
             x_dict = out_dict
 
         return x_dict
+    
+    def neighborsampling_inference(self, x_dict, subgraph_loader, edge_type, node_type, local_node_idx, device):
+        x_all = self.group_input(x_dict, node_type, local_node_idx, device=torch.device('cpu'))
+        for layer in range(self.num_layers):
+            xs = []
+            for batch_size, n_id, adj in subgraph_loader:
+                edge_index, e_id, size = adj.to(device)
+                x = x_all[n_id].to(device)
+                x_target = x[:size[1]]
+                node_type_src = node_type[n_id]
+                node_type_target = node_type_src[:size[1]]
+                x = self.convs[layer]((x, x_target), edge_index, edge_type[e_id], node_type_target)
+                if layer != self.num_layers - 1:
+                    x = F.relu(x)
+                xs.append(x.cpu())
+
+            x_all = torch.cat(xs, dim=0)
+
+        return x_all
 
 
 device = f'cuda:{args.device}' if torch.cuda.is_available() else 'cpu'
@@ -256,6 +302,9 @@ model = RGCN(128, args.hidden_channels, dataset.num_classes, args.num_layers,
 
 x_dict = {k: v.to(device) for k, v in x_dict.items()}
 
+y_global = node_type.new_full((node_type.size(0), 1), -1)
+y_global[local2global['paper']] = data.y_dict['paper']
+y_global = y_global.to(device)
 
 def train(epoch):
     model.train()
@@ -285,15 +334,46 @@ def train(epoch):
     return total_loss / total_examples
 
 
+# @torch.no_grad()
+# def test():
+#     model.eval()
+
+#     out = model.inference(x_dict, edge_index_dict, key2int)
+#     out = out[key2int['paper']]
+
+#     y_pred = out.argmax(dim=-1, keepdim=True).cpu()
+#     y_true = data.y_dict['paper']
+
+#     train_acc = evaluator.eval({
+#         'y_true': y_true[split_idx['train']['paper']],
+#         'y_pred': y_pred[split_idx['train']['paper']],
+#     })['acc']
+#     valid_acc = evaluator.eval({
+#         'y_true': y_true[split_idx['valid']['paper']],
+#         'y_pred': y_pred[split_idx['valid']['paper']],
+#     })['acc']
+#     test_acc = evaluator.eval({
+#         'y_true': y_true[split_idx['test']['paper']],
+#         'y_pred': y_pred[split_idx['test']['paper']],
+#     })['acc']
+
+#     return train_acc, valid_acc, test_acc
+
+
 @torch.no_grad()
 def test():
     model.eval()
 
-    out = model.inference(x_dict, edge_index_dict, key2int)
-    out = out[key2int['paper']]
-
-    y_pred = out.argmax(dim=-1, keepdim=True).cpu()
-    y_true = data.y_dict['paper']
+    # full batch test
+    if not args.subgraph_test:
+        out = model.inference(x_dict, edge_index_dict, key2int)
+        out = out[key2int['paper']]
+        y_pred = out.argmax(dim=-1, keepdim=True).cpu() # [736389, 1]
+        y_true = data.y_dict['paper'] # [736389, 1]
+    else:
+        out = model.neighborsampling_inference(x_dict, subgraph_loader, edge_type, node_type, local_node_idx, device=device)
+        y_pred = out.argmax(-1, keepdim=True)[local2global['paper']]
+        y_true = y_global[local2global['paper']]
 
     train_acc = evaluator.eval({
         'y_true': y_true[split_idx['train']['paper']],
