@@ -254,7 +254,7 @@ if __name__ == '__main__':
                          '2 - only target node features (id vec for others); ' +
                          '3 - all id vec.')
     ap.add_argument('--hidden_dim', type=int, default=64, help='Dimension of the node hidden state. Default is 64.')
-    ap.add_argument('--num_heads', type=int, default=8, help='Number of the attention heads. Default is 8.')
+    ap.add_argument('--num_heads', type=int, default=4, help='Number of the attention heads. Default is 8.')
     ap.add_argument('--num_layers', type=int, default=4)
     ap.add_argument('--epochs', type=int, default=200, help='Number of epochs. Default is 100.')
     ap.add_argument('--patience', type=int, default=50, help='Patience. Default is 5.')
