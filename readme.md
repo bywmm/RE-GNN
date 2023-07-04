@@ -1,6 +1,6 @@
 
 # RE-GNN
-This is the anonymous repository for paper submission 540 (Relation Embedding based Graph Neural Networks) for KDD-22.
+Code for Paper "Enabling Homogeneous GNNs to Handle Heterogeneous Graphs via Relation Embedding".
 
 ## Using RE-GNN respository to reproduce the results.
 
