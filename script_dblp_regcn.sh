@@ -1,1 +1,0 @@
-python run_regnn.py --dataset DBLP --model regcn --save-postfix DBLP-regcn --dropout 0.5 --repeat 10 --device $1

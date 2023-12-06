@@ -1,8 +1,8 @@
 
 # RE-GNN
-Code for Paper "Enabling Homogeneous GNNs to Handle Heterogeneous Graphs via Relation Embedding".
+Code for Paper "Enabling Homogeneous GNNs to Handle Heterogeneous Graphs via Relation Embedding", IEEE TBD, 2023.
 
-## Using RE-GNN respository to reproduce the results.
+## Reproduce the results.
 
 ### Step 1: Install requirements.
 
@@ -17,22 +17,28 @@ scikit_learn==1.0.2
 ```
 
 
-### Step 2: Run scripts
+### Step 2: Get the reported results.
 
-The scripts of our main results are provided.
+The scripts of our main results are provided in the `scripts` file.
 Run one of them to get the reported results.
 For example, 
 
 ```bash
-bash script_imdb_regcn.sh $GPU_ID$
+bash scripts/dblp_regcn_res.sh $GPU_ID$
 ```
 
 
-Note that since the sizes of ACM and DBLP datasets are large, we do not add them to this repository.
-It can be founded on previous work, which is mentioned in the paper submission.
+### Citation
 
-<!-- 
-|       |DBLP   |       |ACM    |       |IMDB   |       |
-|---    |---    |---    |---    |---    |---    |---    |
-|RE-GAT |94.43  |94.83  |93.65  |93.57  |61.04  |61.34  |
-|RE-GCN |95.52  |95.81  |94.54  |94.47  |61.54  |61.83  | -->
+If you find our codes useful or get inspirations from our research, please consider citing our work.
+
+```
+@article{regnn,
+  title={Enabling Homogeneous GNNs to Handle Heterogeneous Graphs Via Relation Embedding},
+  author={Wang, Junfu and Guo, Yuanfang and Yang, Liang and Wang, Yunhong},
+  journal={IEEE Transactions on Big Data},
+  year={2023},
+  volume={9},
+  pages={1697--1710},
+}
+```

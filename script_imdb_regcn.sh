@@ -1,1 +1,0 @@
-python run_regnn.py --dataset IMDB --model regcn --save_postfix IMDB-regcn --feats_type 1 --repeat 10 --device $1

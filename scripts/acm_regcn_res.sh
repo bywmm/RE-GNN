@@ -1,0 +1,1 @@
+python -u run_regnn.py --dataset ACM --model regcn --save_postfix ACM-regcn --feats_type 2 --weight_decay 0.005 --repeat 10 --device $1

@@ -131,7 +131,6 @@ def run(args):
                          args.num_layers, in_dims, input_dropout=args.dropout, activation=F.elu)
         sum_p = sum(p.numel() for p in net.parameters())
         print(sum_p)
-        # assert False
         net.to(device)
         optimizer = torch.optim.Adam(net.parameters(), lr=args.lr, weight_decay=args.weight_decay)
 
